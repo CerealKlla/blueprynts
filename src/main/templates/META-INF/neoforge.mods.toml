@@ -1,0 +1,39 @@
+license="${mod_license}"
+
+[[mods]] #mandatory
+
+modId="${mod_id}" #mandatory
+version="${mod_version}" #mandatory
+displayName="${mod_name}" #mandatory
+
+description='''
+Construction and blueprint authoring mod: the Construction Site mechanic lets a player
+design a free-form footprint with Footprint Slabs, build within a protected volume, and
+save/load the result as a reusable Blueprint.
+'''
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Optional soft dependency -- Blueprint Types are bridged into Settlemynts' Zone Type registry only
+# if Settlemynts happens to be loaded (see bridge.SettlemyntsZoneBridge); the mod works standalone
+# without it. No versionRange -- an empty string is an invalid range that makes FML reject an
+# installed Settlemynts outright (same gotcha Lyfe's own optional Cartographyr dependency hit),
+# omitting the field entirely is what actually means "any version."
+[[dependencies.${mod_id}]]
+    modId="settlemynts"
+    type="optional"
+    reason="Registers Blueprynts' built-in Blueprint Types as Settlemynts Zone Types if present."
+    ordering="AFTER"
+    side="BOTH"

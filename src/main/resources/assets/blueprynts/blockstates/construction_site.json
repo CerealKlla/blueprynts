@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "blueprynts:block/construction_site" },
+    "facing=south": { "model": "blueprynts:block/construction_site", "y": 180 },
+    "facing=west": { "model": "blueprynts:block/construction_site", "y": 270 },
+    "facing=east": { "model": "blueprynts:block/construction_site", "y": 90 }
+  }
+}

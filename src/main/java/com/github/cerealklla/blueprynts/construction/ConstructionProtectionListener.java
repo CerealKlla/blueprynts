@@ -1,0 +1,66 @@
+package com.github.cerealklla.blueprynts.construction;
+
+import com.github.cerealklla.blueprynts.blueprint.TierSpec;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.neoforged.bus.api.ICancellableEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
+
+/**
+ * Enforces "the player cannot break/place blocks outside the footprint's build volume" once a
+ * Construction Site is CONSTRUCTING (design: the ghost-glass wall is purely visual/walk-through,
+ * like every other ghost marker in the suite -- this is the real protection check). No restriction
+ * at all while DESIGNING (slabs may be placed freely anywhere in the leveled outer area) or IDLE.
+ */
+public final class ConstructionProtectionListener {
+
+    @SubscribeEvent
+    public void onBreak(BreakBlockEvent event) {
+        if (event.getState().getBlock() instanceof ConstructionSiteBlock && event.getLevel() instanceof ServerLevel serverLevel) {
+            // Restoring here (rather than the guard check below) is what stands in for the missing
+            // Block#onRemove hook this version of the game no longer has -- see
+            // ConstructionSiteBlock#restoreIfActive's own doc.
+            ConstructionSiteBlock.restoreIfActive(serverLevel, event.getPos());
+            return;
+        }
+        guard(event.getPlayer(), event.getPos(), event);
+    }
+
+    @SubscribeEvent
+    public void onPlace(BlockEvent.EntityPlaceEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            guard(player, event.getPos(), event);
+        }
+    }
+
+    private void guard(Player player, BlockPos pos, ICancellableEvent event) {
+        ActiveSiteRegistry.activeSiteFor(player.getUUID()).ifPresent(globalPos -> {
+            if (!(player.level() instanceof ServerLevel serverLevel) || !globalPos.dimension().equals(serverLevel.dimension())) {
+                return;
+            }
+            if (!(serverLevel.getBlockEntity(globalPos.pos()) instanceof ConstructionSiteBlockEntity site)
+                    || site.phase() != ConstructionSitePhase.CONSTRUCTING) {
+                return;
+            }
+            if (!withinBuildVolume(site, globalPos.pos(), pos)) {
+                event.setCanceled(true);
+                player.sendSystemMessage(Component.literal("You can't build outside this Construction Site's footprint."));
+            }
+        });
+    }
+
+    private boolean withinBuildVolume(ConstructionSiteBlockEntity site, BlockPos sitePos, BlockPos target) {
+        Column column = new Column(target.getX(), target.getZ());
+        if (!site.markedColumns().contains(column)) {
+            return false;
+        }
+        TierSpec spec = TierSpec.fromOrdinal(site.tier());
+        int relY = target.getY() - sitePos.getY();
+        return relY >= -spec.depthBelowGround() && relY <= spec.heightAboveGround();
+    }
+}
