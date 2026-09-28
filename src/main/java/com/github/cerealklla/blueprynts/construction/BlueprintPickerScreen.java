@@ -109,7 +109,7 @@ public class BlueprintPickerScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         int titleWidth = font.width(title);
-        graphics.text(font, title, width / 2 - titleWidth / 2, 15, 0xFFFFFF);
+        graphics.text(font, title, width / 2 - titleWidth / 2, 15, 0xFFFFFFFF);
 
         int centerX = width / 2;
         int previewTop = 60;
@@ -117,14 +117,14 @@ public class BlueprintPickerScreen extends Screen {
 
         if (data.savedBlueprintNames().isEmpty()) {
             String empty = "No saved Blueprints yet.";
-            graphics.text(font, empty, centerX - font.width(empty) / 2, previewTop + PREVIEW_BOX_HEIGHT / 2, 0xAAAAAA);
+            graphics.text(font, empty, centerX - font.width(empty) / 2, previewTop + PREVIEW_BOX_HEIGHT / 2, 0xFFAAAAAA);
             return;
         }
 
         String name = data.savedBlueprintNames().get(index);
         String position = "(" + (index + 1) + " / " + data.savedBlueprintNames().size() + ")";
-        graphics.text(font, name, centerX - font.width(name) / 2, previewTop - 22, 0xFFFFFF);
-        graphics.text(font, position, centerX - font.width(position) / 2, previewTop - 10, 0xAAAAAA);
+        graphics.text(font, name, centerX - font.width(name) / 2, previewTop - 22, 0xFFFFFFFF);
+        graphics.text(font, position, centerX - font.width(position) / 2, previewTop - 10, 0xFFAAAAAA);
 
         graphics.fill(boxX, previewTop, boxX + PREVIEW_BOX_WIDTH, previewTop + PREVIEW_BOX_HEIGHT, 0xFF202020);
         renderPreview(graphics, boxX, previewTop);

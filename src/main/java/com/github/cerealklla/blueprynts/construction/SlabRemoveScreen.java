@@ -29,7 +29,7 @@ public class SlabRemoveScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         int titleWidth = font.width(title);
-        graphics.text(font, title, width / 2 - titleWidth / 2, height / 2 - 35, 0xFFFFFF);
+        graphics.text(font, title, width / 2 - titleWidth / 2, height / 2 - 35, 0xFFFFFFFF);
     }
 
     @Override

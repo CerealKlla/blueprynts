@@ -109,9 +109,9 @@ public class ConstructionSiteScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         int titleWidth = font.width(title);
-        graphics.text(font, title, width / 2 - titleWidth / 2, 15, 0xFFFFFF);
+        graphics.text(font, title, width / 2 - titleWidth / 2, 15, 0xFFFFFFFF);
         String phaseText = "Phase: " + data.phase();
-        graphics.text(font, phaseText, width / 2 - font.width(phaseText) / 2, 27, 0xAAAAAA);
+        graphics.text(font, phaseText, width / 2 - font.width(phaseText) / 2, 27, 0xFFAAAAAA);
     }
 
     @Override
