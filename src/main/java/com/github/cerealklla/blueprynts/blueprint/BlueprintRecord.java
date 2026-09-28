@@ -19,9 +19,11 @@ import net.minecraft.resources.Identifier;
  * direction that site happens to face.
  */
 public record BlueprintRecord(
+        int templateVersion,
         String name,
         String author,
         BlueprintStatus status,
+        List<BlueprintReview> reviews,
         Identifier blueprintTypeId,
         int tier,
         List<Column> relativeColumns,
@@ -29,11 +31,21 @@ public record BlueprintRecord(
         int depth,
         List<BlueprintCell> cells) {
 
+    /**
+     * Bump this whenever a change to this record's own JSON shape would otherwise break reading
+     * older saved files (a field renamed/removed/re-typed, not just a new optional field with a
+     * safe default). Every file written today stamps this value; a future reader can branch on
+     * whatever value it finds to decide how to interpret the rest of the document.
+     */
+    public static final int CURRENT_TEMPLATE_VERSION = 1;
+
     public static final Codec<BlueprintRecord> CODEC = RecordCodecBuilder.create(i -> i.group(
+            Codec.INT.optionalFieldOf("template_version", 1).forGetter(BlueprintRecord::templateVersion),
             Codec.STRING.fieldOf("name").forGetter(BlueprintRecord::name),
             Codec.STRING.fieldOf("author").forGetter(BlueprintRecord::author),
             Codec.STRING.xmap(s -> BlueprintStatus.valueOf(s.toUpperCase()), BlueprintStatus::name)
                     .optionalFieldOf("status", BlueprintStatus.UNREVIEWED).forGetter(BlueprintRecord::status),
+            BlueprintReview.CODEC.listOf().optionalFieldOf("reviews", List.of()).forGetter(BlueprintRecord::reviews),
             Identifier.CODEC.fieldOf("blueprint_type").forGetter(BlueprintRecord::blueprintTypeId),
             Codec.INT.fieldOf("tier").forGetter(BlueprintRecord::tier),
             Column.CODEC.listOf().fieldOf("columns").forGetter(BlueprintRecord::relativeColumns),
@@ -44,6 +56,13 @@ public record BlueprintRecord(
 
     /** Same record with a different {@link #status()} -- used when a Blueprint is moved between review folders. */
     public BlueprintRecord withStatus(BlueprintStatus newStatus) {
-        return new BlueprintRecord(name, author, newStatus, blueprintTypeId, tier, relativeColumns, height, depth, cells);
+        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells);
+    }
+
+    /** Same record with one more vote appended to the permanent review history -- never replaces or removes a prior vote. */
+    public BlueprintRecord withAddedReview(BlueprintReview review) {
+        List<BlueprintReview> updated = new java.util.ArrayList<>(reviews);
+        updated.add(review);
+        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells);
     }
 }

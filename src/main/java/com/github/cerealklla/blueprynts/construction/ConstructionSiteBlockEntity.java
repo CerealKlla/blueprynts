@@ -263,8 +263,8 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             }
         }
 
-        BlueprintRecord record = new BlueprintRecord(name, player.getName().getString(), BlueprintStatus.UNREVIEWED,
-                blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells);
+        BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells);
         BlueprintStorage.get().save(record);
         return null;
     }
