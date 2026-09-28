@@ -45,13 +45,18 @@ public final class ModBlocks {
 
     // The "untouched site filler" sentinel (see ExistingBlock's own doc) -- visually brown wool,
     // genuinely a different block, so a player's own real brown wool is never mistaken for it.
-    // Deliberately no registered BlockItem below -- this block is never meant to be obtainable at
-    // all, only ever placed programmatically by SiteTerrainOps.
+    // Deliberately no registered BlockItem below -- this block is never meant to be *obtainable* at
+    // all (empty loot table handles that), only ever placed programmatically by SiteTerrainOps.
+    // Breakable like real wool, NOT unbreakable like FootprintSlabBlock/Bedrock -- a player needs to
+    // be able to dig through/replace it while building, same as they always could with real dirt or
+    // real wool before this sentinel existed; "never obtainable" and "unbreakable" are different
+    // properties, and this block only wants the former (a real playtest report caught this: making
+    // it bedrock-hard by copying FootprintSlabBlock's convention blocked normal building entirely).
     public static final DeferredBlock<ExistingBlock> EXISTING_BLOCK = BLOCKS.register(
             "existing_block",
             id -> new ExistingBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.COLOR_BROWN)
-                    .strength(-1.0F, 3600000.0F) // unbreakable, same convention as Blocks.BEDROCK
+                    .strength(0.8F) // matches Blocks.BROWN_WOOL's own hardness
                     .sound(SoundType.WOOL)
                     .setId(ResourceKey.create(Registries.BLOCK, id))));
 

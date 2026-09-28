@@ -7,6 +7,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import com.github.cerealklla.blueprynts.construction.Column;
+import com.github.cerealklla.blueprynts.construction.SizeClass;
 
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
@@ -30,6 +31,18 @@ import net.minecraft.resources.Identifier;
  * saved before this field existed -- {@code loadBlueprint} treats that as "no correction possible"
  * and skips rotation entirely, rather than guessing a default that could rotate an old file wrong a
  * second way.
+ *
+ * <p>{@link #sizeClass()} is the saving site's own plot Size (Small/Large) -- Load re-clears the
+ * *entire* original plot outer area (via {@code SiteTerrainOps.computeOuterArea}, the same one a
+ * fresh Begin Design uses), not just a tight bounding box around the built footprint. Without this,
+ * Load only knew about the marked columns themselves, so any deliberate "white space" a player left
+ * around their structure within the plot (e.g. building against the back edge instead of centered)
+ * was lost -- a real playtest report ("clicking Load for two different blueprints clears a different
+ * area... the blueprint needs to track all the white space around the structure too"). `null` for
+ * files saved before this field existed -- Load falls back to {@code
+ * SiteTerrainOps.computeOuterAreaForFootprint} (the old, footprint-bounding-box behavior) in that
+ * case, since there's no way to recover an old file's original plot size, and a bounding box is
+ * guaranteed to at least cover the real content even if it doesn't reproduce the original margin.
  */
 public record BlueprintRecord(
         int templateVersion,
@@ -43,7 +56,8 @@ public record BlueprintRecord(
         int height,
         int depth,
         List<BlueprintCell> cells,
-        Direction facing) {
+        Direction facing,
+        SizeClass sizeClass) {
 
     /**
      * Bump this whenever a change to this record's own JSON shape would otherwise break reading
@@ -66,19 +80,22 @@ public record BlueprintRecord(
             Codec.INT.fieldOf("height").forGetter(BlueprintRecord::height),
             Codec.INT.fieldOf("depth").forGetter(BlueprintRecord::depth),
             BlueprintCell.CODEC.listOf().fieldOf("cells").forGetter(BlueprintRecord::cells),
-            Direction.CODEC.optionalFieldOf("facing").forGetter(r -> Optional.ofNullable(r.facing()))
-    ).apply(i, (templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing) ->
-            new BlueprintRecord(templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing.orElse(null))));
+            Direction.CODEC.optionalFieldOf("facing").forGetter(r -> Optional.ofNullable(r.facing())),
+            Codec.STRING.xmap(SizeClass::valueOf, SizeClass::name).optionalFieldOf("size_class")
+                    .forGetter(r -> Optional.ofNullable(r.sizeClass()))
+    ).apply(i, (templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass) ->
+            new BlueprintRecord(templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells,
+                    facing.orElse(null), sizeClass.orElse(null))));
 
     /** Same record with a different {@link #status()} -- used when a Blueprint is moved between review folders. */
     public BlueprintRecord withStatus(BlueprintStatus newStatus) {
-        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing);
+        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass);
     }
 
     /** Same record with one more vote appended to the permanent review history -- never replaces or removes a prior vote. */
     public BlueprintRecord withAddedReview(BlueprintReview review) {
         List<BlueprintReview> updated = new java.util.ArrayList<>(reviews);
         updated.add(review);
-        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells, facing);
+        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass);
     }
 }

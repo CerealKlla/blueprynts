@@ -285,7 +285,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         }
 
         BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
-                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells, intoSite);
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells, intoSite, sizeClass);
         BlueprintStorage.get().save(record);
         return null;
     }
@@ -318,8 +318,18 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
                 ? net.minecraft.world.level.block.Rotation.NONE
                 : SiteTerrainOps.rotationBetween(record.facing(), intoSite);
 
+        // Re-clears the *entire* original plot (matching computeOuterArea's own Begin Design shape),
+        // not just a tight bounding box around the built footprint -- without this, any deliberate
+        // "white space" a player left around their structure within the plot (e.g. building against
+        // the back edge instead of centered) was lost on Load, and two Blueprints with differently-
+        // sized footprints cleared differently-sized areas even if both were designed on the same
+        // plot Size (a real playtest report). null sizeClass() (a file saved before this existed)
+        // falls back to the old footprint-bounding-box behavior -- there's no way to recover an old
+        // file's original plot size, and a bounding box at least always covers the real content.
         snapshot = new TerrainSnapshot();
-        SiteTerrainOps.OuterArea area = SiteTerrainOps.computeOuterAreaForFootprint(getBlockPos(), intoSite, record.relativeColumns());
+        SiteTerrainOps.OuterArea area = record.sizeClass() != null
+                ? SiteTerrainOps.computeOuterArea(getBlockPos(), intoSite, record.sizeClass().outerDimension())
+                : SiteTerrainOps.computeOuterAreaForFootprint(getBlockPos(), intoSite, record.relativeColumns());
         SiteTerrainOps.levelClearingArea(level, area, snapshot);
 
         markedColumns.clear();
