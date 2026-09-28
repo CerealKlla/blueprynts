@@ -34,11 +34,15 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -58,6 +62,36 @@ public class BluepryntsMod {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(BluepryntsMod::registerPayloads);
         NeoForge.EVENT_BUS.register(new ConstructionProtectionListener());
+        NeoForge.EVENT_BUS.register(new com.github.cerealklla.blueprynts.construction.FootprintSlabGuard());
+        NeoForge.EVENT_BUS.addListener(BluepryntsMod::onPlayerLoggedIn);
+    }
+
+    // Debug-only, same convention as Settlemynts' own onPlayerLoggedIn -- no real crafting recipe
+    // exists yet for the Construction Site. Must be removed or gated behind a real debug flag
+    // before any actual release.
+    private static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        Player player = event.getEntity();
+        if (player.level().isClientSide()) {
+            return;
+        }
+        player.addItem(new ItemStack(ModBlocks.CONSTRUCTION_SITE_ITEM.get()));
+        LOGGER.info("Granted debug Construction Site item to {}", player.getName().getString());
+
+        // A Footprint Slab is only ever meant to exist in its owning player's inventory while a
+        // session is active -- if one survived a login (e.g. a server crash mid-session, before
+        // FootprintSlabGuard's drop/container protections existed, or from a save predating them),
+        // clear it out rather than leave a permanently-useless orphaned stack.
+        var inventory = player.getInventory();
+        int cleared = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            if (com.github.cerealklla.blueprynts.construction.FootprintSlabBlock.isFootprintSlab(inventory.getItem(i))) {
+                inventory.setItem(i, ItemStack.EMPTY);
+                cleared++;
+            }
+        }
+        if (cleared > 0) {
+            LOGGER.info("Cleared {} stray Footprint Slab stack(s) from {}", cleared, player.getName().getString());
+        }
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

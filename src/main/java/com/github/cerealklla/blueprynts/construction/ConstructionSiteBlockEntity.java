@@ -80,6 +80,11 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         return getBlockState().getValue(ConstructionSiteBlock.FACING).getOpposite();
     }
 
+    /** The current outer clearing rectangle, recomputed fresh from the site's own position/facing/Size -- valid throughout DESIGNING and CONSTRUCTING alike, not just once slabs exist. */
+    public SiteTerrainOps.OuterArea outerArea() {
+        return SiteTerrainOps.computeOuterArea(getBlockPos(), intoSite(), sizeClass.outerDimension());
+    }
+
     /** {@code true} if unclaimed, or already claimed by {@code player}. */
     public boolean claim(Player player) {
         if (activePlayer == null) {
@@ -159,7 +164,10 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
 
         int groundY = getBlockPos().getY();
         for (Column column : markedColumns) {
-            BlockPos slabPos = new BlockPos(column.x(), groundY, column.z());
+            // Slabs are placed by right-clicking the leveled floor, so they stand ON it at
+            // groundY + 1, not embedded in it at groundY -- looking at groundY was a real playtest
+            // bug, Begin Construction silently leaving every placed slab behind.
+            BlockPos slabPos = new BlockPos(column.x(), groundY + 1, column.z());
             if (level.getBlockState(slabPos).getBlock() instanceof FootprintSlabBlock) {
                 level.removeBlock(slabPos, false);
             }
@@ -193,14 +201,24 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         return getBlockPos().equals(origin);
     }
 
-    /** Restores every captured terrain change and resets to IDLE -- used for a deliberate clear, the walk-away auto-clear, and breaking the site block while active. */
+    /**
+     * Restores every captured terrain change and resets to IDLE -- used for a deliberate clear, the
+     * walk-away auto-clear, and breaking the site block while active. Also reclaims any Footprint
+     * Slabs still sitting in the active player's inventory (if they're online) -- a real playtest
+     * gap: walking away used to clear the leveled terrain but left the granted slab budget in the
+     * player's inventory for free, undermining the whole point of it being a budget.
+     */
     public void restoreAndReset(ServerLevel level) {
         int groundY = getBlockPos().getY();
         for (Column column : markedColumns) {
-            BlockPos slabPos = new BlockPos(column.x(), groundY, column.z());
+            // Same groundY-vs-groundY+1 fix as beginConstruction -- see its own comment.
+            BlockPos slabPos = new BlockPos(column.x(), groundY + 1, column.z());
             if (level.getBlockState(slabPos).getBlock() instanceof FootprintSlabBlock) {
                 level.removeBlock(slabPos, false);
             }
+        }
+        if (activePlayer != null && level.getServer().getPlayerList().getPlayer(activePlayer) instanceof Player onlinePlayer) {
+            clearRemainingSlabItems(onlinePlayer);
         }
         SiteTerrainOps.restore(level, snapshot);
         GhostConstructionWallEntity.discardAll(level, getBlockPos());

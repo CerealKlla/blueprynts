@@ -62,7 +62,11 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
 
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return defaultBlockState().setValue(FACING, context.getHorizontalDirection());
+        // getHorizontalDirection() is the placer's own look direction (away from them) -- furnace
+        // convention (and this block's own doc) wants FACING to point *toward* the placer instead,
+        // so this needs the opposite. Getting this backwards was a real playtest bug: the leveled
+        // clearing area extended toward the placer instead of away from them.
+        return defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
     }
 
     @Override
@@ -79,7 +83,7 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
         };
     }
 
-    /** Auto-clears an active session once the claiming player is more than {@link #AUTO_CLEAR_DISTANCE} from BOTH the site block and every marked column. */
+    /** Auto-clears an active session once the claiming player is more than {@link #AUTO_CLEAR_DISTANCE} from BOTH the site block and the outer clearing/build area. */
     private static void serverTick(ServerLevel level, BlockPos pos, ConstructionSiteBlockEntity site) {
         if (site.phase() == ConstructionSitePhase.IDLE || site.activePlayer() == null) {
             return;
@@ -88,18 +92,35 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
         if (player == null) {
             return;
         }
-        double distanceToSite = Math.sqrt(pos.distSqr(player.blockPosition()));
-        if (distanceToSite <= AUTO_CLEAR_DISTANCE) {
+        // Horizontal (X/Z) distance only -- BlockPos#distSqr is 3D, and standing at the site's own
+        // Y vs. a player's feet position (one block above whatever they're standing on) was enough
+        // vertical difference on its own to push a genuinely "5 blocks away" horizontal distance
+        // over the threshold, a real playtest bug (walking right up to the edge of the build area
+        // triggered an immediate auto-clear instead of being recognized as "still there").
+        if (horizontalDistance(pos, player.getX(), player.getZ()) <= AUTO_CLEAR_DISTANCE) {
             return;
         }
-        for (Column column : site.markedColumns()) {
-            BlockPos columnPos = new BlockPos(column.x(), pos.getY(), column.z());
-            if (Math.sqrt(columnPos.distSqr(player.blockPosition())) <= AUTO_CLEAR_DISTANCE) {
-                return;
-            }
+        // Distance to the whole outer clearing rectangle, not individual marked columns -- a real
+        // playtest bug: checking only placed-slab columns meant standing anywhere inside the
+        // leveled area that hadn't been given a slab yet (including the entire area before any
+        // slabs are placed at all) still counted as "away," triggering an immediate auto-clear the
+        // instant a player walked in. The outer area always contains every marked column anyway, so
+        // this is a strict superset of that check, not just a different one.
+        if (site.outerArea().distanceTo(player.getX(), player.getZ()) <= AUTO_CLEAR_DISTANCE) {
+            return;
         }
         site.restoreAndReset(level);
         player.sendSystemMessage(Component.literal("You wandered away from the Construction Site -- it's been cleared."));
+    }
+
+    private static double horizontalDistance(BlockPos a, double x, double z) {
+        return horizontalDistance(a.getX(), a.getZ(), x, z);
+    }
+
+    private static double horizontalDistance(double ax, double az, double x, double z) {
+        double dx = ax - x;
+        double dz = az - z;
+        return Math.sqrt(dx * dx + dz * dz);
     }
 
     @Override

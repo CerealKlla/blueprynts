@@ -1,0 +1,33 @@
+# Blueprynts
+
+Construction and blueprint authoring mod for a modular Minecraft project (Minecraft Java Edition). Part of a suite of intercommunicating mods that expose public APIs so other mods — the user's own and third parties' — can integrate.
+
+## Context directory — read this first
+
+`context/` is a **separate private repo**, not part of this one — it's listed in `.gitignore` here and must never be committed to this repo. It's cloned as a subdirectory at `context/` for local convenience. If this directory is missing (e.g. a fresh clone of just this repo), restore it with:
+
+```
+git clone https://github.com/CerealKlla/blueprynts-context.git context
+```
+
+(As of this writing that remote hasn't been created yet — the context repo exists locally with its own git history but hasn't been pushed. Create an empty private GitHub repo named `blueprynts-context` under the same account/org as the other mods' context repos, then `git remote add origin <url> && git push -u origin master` from inside `context/`.)
+
+Before searching source for architecture, ownership boundaries, API shape, or "why does this work this way," check `context/` first. It's maintained specifically to answer those questions cheaply:
+
+- `context/design-document.md` — the authoritative design spec for what's actually been built (the Construction Site mechanic and its planned next round). Note: the repo root also has a much larger, earlier `design-document.md` describing a general-purpose Blueprint/Construction-Project framework — that root document is background/candidate future scope, not what got built; `context/design-document.md` explains the relationship and is authoritative for anything already implemented.
+- `context/decisions.md` — dated log of decisions made during implementation that extend or override the design document, with rationale. Check this for anything that looks like it contradicts context/design-document.md — the doc should already reflect the current decision, but this explains why.
+- `context/classes/` — one short markdown file per implemented class (or a small tightly-related group of classes, e.g. all payload records together) — public surface, key state, collaborators. Read the relevant file here before opening the actual source, and before editing a class update its file to match.
+
+**Keep this system current as you work:**
+- When a design decision is made that conflicts with or is absent from context/design-document.md, update it directly and add a dated entry to context/decisions.md explaining the change.
+- When a class is added or its public surface changes, add or update its file in `context/classes/`.
+- Don't let source and these docs drift — treat updating them as part of finishing the change, not optional cleanup.
+- `context/` has its own git history, independent of this repo's commits. Commit and push changes there separately (`git -C context add . && git -C context commit -m "..." && git -C context push`) — editing the files alone doesn't back them up.
+
+## Status
+
+Scaffolded 2026-09-27 mirroring Settlemynts' own setup exactly: NeoForge 26.1.2.109, Java 25, `com.github.cerealklla.blueprynts` / `blueprynts`. Settlemynts is an **optional** soft dependency (not required) — the only integration point today is bridging built-in Blueprint Types into Settlemynts' Zone Type registry if present.
+
+**V1 (the Construction Site mechanic) implemented and live-playtested the same day** — see [context/decisions.md](context/decisions.md) for the full dated history, including ten real bugs found and fixed during live testing (perimeter-fit asymmetry was actually a Settlemynts-side bug, found while testing this mod alongside it — see Settlemynts' own context repo). In short: a Construction Site block lets a player design a free-form (player-drawn, not fixed-rectangle) footprint via budgeted Footprint Slabs, build within a protected volume with a walk-away auto-clear safeguard, and Save/Load the result as a reusable Blueprint. See [context/design-document.md](context/design-document.md) for the full mechanic and [context/classes/](context/classes/) for per-class reference.
+
+**Next**: a batch of further work was discussed but not yet planned in detail or implemented — a materials-refund pile on unsaved clear (explicitly not on Load), a glass ceiling at the build volume's height limit, a proper picklist for Load instead of typing a name, moving Blueprint storage off per-dimension `SavedData` to a global external file store (so a server wipe doesn't lose them), a tag system (arbitrary + theming tags), a review-status field (data-only for now, no enforcement), and a Settlemynts-side Town Hall Core required-tags plot filter. See context/design-document.md's own "Open design questions" section and context/decisions.md's most recent entry for the full list. A preview-image feature was discussed and explicitly parked as a hypothetical, not in scope.

@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.github.cerealklla.blueprynts.blueprint.TierSpec;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -29,6 +31,13 @@ public final class SiteTerrainOps {
     public record OuterArea(int minX, int maxX, int minZ, int maxZ, int groundY) {
         public boolean contains(int x, int z) {
             return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
+        }
+
+        /** 0 if {@code (x, z)} is inside (or on the boundary of) this rectangle; otherwise the horizontal distance to its nearest edge. */
+        public double distanceTo(double x, double z) {
+            double dx = Math.max(0, Math.max(minX - x, x - maxX));
+            double dz = Math.max(0, Math.max(minZ - z, z - maxZ));
+            return Math.sqrt(dx * dx + dz * dz);
         }
     }
 
@@ -59,26 +68,42 @@ public final class SiteTerrainOps {
 
     /**
      * Flattens {@code area} to {@code area.groundY()}: clears everything above it up to a generous
-     * height (no floating overhangs), and fills the ground layer itself with dirt if it was air (no
-     * gaps). Captures every touched position's original state first.
+     * height (no floating overhangs), unconditionally sets the floor layer itself to dirt (not just
+     * when it happened to be air), and unconditionally replaces a solid bedrock foundation reaching
+     * down to {@link TierSpec#maxDepthBelowGround()} below that.
+     *
+     * <p>The floor/foundation used to only touch the surface layer, and only filled it if it was
+     * literally air -- fine over ordinary land, but a real playtest bug in ice/ocean biomes: the
+     * "ground" at a site's own Y can be ice, snow, or open water over nothing solid at all for many
+     * blocks down (icebergs, frozen ocean, ravines). Leveling only the top layer left a site's floor
+     * sitting on top of whatever unstable terrain was actually there, visibly floating above the
+     * surrounding landscape once the area above it was cleared. Every touched position's original
+     * state is still captured first, so a full clear/restore is unaffected.
      */
     public static void levelClearingArea(ServerLevel level, OuterArea area, TerrainSnapshot snapshot) {
+        int foundationDepth = TierSpec.maxDepthBelowGround();
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = area.minX(); x <= area.maxX(); x++) {
             for (int z = area.minZ(); z <= area.maxZ(); z++) {
                 cursor.set(x, area.groundY(), z);
-                BlockState groundState = level.getBlockState(cursor);
-                snapshot.captureIfAbsent(cursor, groundState);
-                if (groundState.isAir()) {
-                    level.setBlock(cursor, Blocks.DIRT.defaultBlockState(), 3);
-                }
-                for (int y = area.groundY() + 1; y <= area.groundY() + CLEAR_HEIGHT_ABOVE_GROUND; y++) {
+                snapshot.captureIfAbsent(cursor, level.getBlockState(cursor));
+                level.setBlock(cursor, Blocks.DIRT.defaultBlockState(), 3);
+
+                for (int y = area.groundY() - 1; y >= area.groundY() - foundationDepth; y--) {
                     cursor.set(x, y, z);
-                    BlockState state = level.getBlockState(cursor);
-                    if (!state.isAir()) {
-                        snapshot.captureIfAbsent(cursor, state);
-                        level.setBlock(cursor, Blocks.AIR.defaultBlockState(), 3);
-                    }
+                    snapshot.captureIfAbsent(cursor, level.getBlockState(cursor));
+                    level.setBlock(cursor, Blocks.BEDROCK.defaultBlockState(), 3);
+                }
+
+                for (int y = area.groundY() + 1; y <= area.groundY() + CLEAR_HEIGHT_ABOVE_GROUND; y++) {
+                    // Captured unconditionally, even when already air -- a real playtest bug:
+                    // skipping the capture for already-air positions meant restore() had nothing to
+                    // revert them to later, so anything a player built in what used to be empty
+                    // space survived a clear/auto-clear untouched instead of being wiped with
+                    // everything else.
+                    cursor.set(x, y, z);
+                    snapshot.captureIfAbsent(cursor, level.getBlockState(cursor));
+                    level.setBlock(cursor, Blocks.AIR.defaultBlockState(), 3);
                 }
             }
         }

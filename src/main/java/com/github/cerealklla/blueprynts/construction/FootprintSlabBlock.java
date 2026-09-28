@@ -10,6 +10,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -71,6 +72,14 @@ public class FootprintSlabBlock extends Block {
         if (site.phase() != ConstructionSitePhase.DESIGNING || !player.getUUID().equals(site.activePlayer())) {
             return "This Construction Site isn't in Design phase for you right now.";
         }
+        // A column outside the site's own leveled outer area was never captured into its terrain
+        // snapshot (SiteTerrainOps#levelClearingArea only touches that rectangle) -- a real playtest
+        // bug: nothing stopped a slab from being marked further out, and anything built on a column
+        // that was never snapshotted has nothing to revert to, so it silently survived a clear/
+        // auto-clear the walk-away safeguard was supposed to catch.
+        if (!site.outerArea().contains(placedAt.getX(), placedAt.getZ())) {
+            return "Place Footprint Slabs within the Construction Site's leveled area.";
+        }
         Column column = new Column(placedAt.getX(), placedAt.getZ());
         if (!site.markColumn(column)) {
             return "This column is already marked.";
@@ -104,5 +113,10 @@ public class FootprintSlabBlock extends Block {
         if (!player.getInventory().add(returned)) {
             player.drop(returned, false);
         }
+    }
+
+    /** Whether {@code stack} is a Footprint Slab -- used by the item-tracking guard (login cleanup, drop/container prevention) so those checks don't have to know this block's own type directly. */
+    public static boolean isFootprintSlab(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() instanceof FootprintSlabBlock;
     }
 }

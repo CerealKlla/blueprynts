@@ -43,4 +43,13 @@ public enum TierSpec {
         }
         return values[tier];
     }
+
+    /** The deepest any Tier's below-ground allowance reaches -- how far down {@code SiteTerrainOps#levelClearingArea}'s bedrock foundation must extend to always cover it, regardless of which Tier ends up selected later. */
+    public static int maxDepthBelowGround() {
+        int max = 0;
+        for (TierSpec spec : values()) {
+            max = Math.max(max, spec.depthBelowGround());
+        }
+        return max;
+    }
 }
