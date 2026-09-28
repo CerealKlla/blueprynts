@@ -10,7 +10,7 @@ Construction and blueprint authoring mod for a modular Minecraft project (Minecr
 git clone https://github.com/CerealKlla/blueprynts-context.git context
 ```
 
-(As of this writing that remote hasn't been created yet — the context repo exists locally with its own git history but hasn't been pushed. Create an empty private GitHub repo named `blueprynts-context` under the same account/org as the other mods' context repos, then `git remote add origin <url> && git push -u origin master` from inside `context/`.)
+(Both `blueprynts` and `blueprynts-context` remotes exist under CerealKlla and are pushed and up to date as of 2026-09-27.)
 
 Before searching source for architecture, ownership boundaries, API shape, or "why does this work this way," check `context/` first. It's maintained specifically to answer those questions cheaply:
 
