@@ -74,6 +74,60 @@ public final class BlueprintStorage {
         return names;
     }
 
+    /**
+     * Whether BluepryntImager (a separate standalone program, no shared dependency -- see its own
+     * context repo) has generated preview images for this Blueprint yet, and how fresh they are.
+     * {@code -1} means missing. The two variants are always generated together by that program, but
+     * this doesn't assume that -- it checks each independently.
+     */
+    public PreviewAvailability previewAvailability(String name) {
+        Optional<Path> jsonPath = findFile(name);
+        if (jsonPath.isEmpty()) {
+            return new PreviewAvailability(PreviewAvailability.MISSING, PreviewAvailability.MISSING);
+        }
+        return new PreviewAvailability(
+                mtimeOrMissing(previewPath(jsonPath.get(), "full")),
+                mtimeOrMissing(previewPath(jsonPath.get(), "small")));
+    }
+
+    /** @return the raw PNG bytes for the given Blueprint's preview image, or empty if it doesn't exist. */
+    public Optional<byte[]> readPreviewBytes(String name, String variant) {
+        return findFile(name)
+                .map(jsonPath -> previewPath(jsonPath, variant))
+                .filter(Files::exists)
+                .map(path -> {
+                    try {
+                        return Files.readAllBytes(path);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to read preview image for '" + name + "' (" + variant + ")", e);
+                    }
+                });
+    }
+
+    /** {@code variant} is {@code "full"} (the 1024x768 detail image) or {@code "small"} (the smaller "Minimal" variant). */
+    private static Path previewPath(Path jsonPath, String variant) {
+        String suffix = "small".equals(variant) ? ".small.png" : ".png";
+        return jsonPath.resolveSibling(withoutExtension(jsonPath) + suffix);
+    }
+
+    private static String withoutExtension(Path jsonPath) {
+        String name = jsonPath.getFileName().toString();
+        return name.endsWith(EXTENSION) ? name.substring(0, name.length() - EXTENSION.length()) : name;
+    }
+
+    private static long mtimeOrMissing(Path file) {
+        try {
+            return Files.exists(file) ? Files.getLastModifiedTime(file).toMillis() : PreviewAvailability.MISSING;
+        } catch (IOException e) {
+            return PreviewAvailability.MISSING;
+        }
+    }
+
+    /** {@code -1} for either field means that variant doesn't exist yet. */
+    public record PreviewAvailability(long fullMtime, long smallMtime) {
+        public static final long MISSING = -1L;
+    }
+
     private Path directoryFor(BlueprintRecord record) {
         String typeLabel = BlueprintTypeRegistry.get(record.blueprintTypeId())
                 .map(BlueprintType::label)

@@ -4,6 +4,8 @@ import com.github.cerealklla.blueprynts.construction.ClientConstructionRequests;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteScreen;
 import com.github.cerealklla.blueprynts.construction.GhostConstructionWallRenderer;
 import com.github.cerealklla.blueprynts.construction.SlabRemoveScreen;
+import com.github.cerealklla.blueprynts.construction.client.BluepryntsClientConfig;
+import com.github.cerealklla.blueprynts.construction.client.ClientBlueprintPreviewCache;
 import com.github.cerealklla.blueprynts.registration.ModEntities;
 
 import net.minecraft.client.Minecraft;
@@ -12,6 +14,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
@@ -21,6 +24,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 public class BluepryntsModClient {
 
     public BluepryntsModClient(ModContainer container) {
+        container.registerConfig(ModConfig.Type.CLIENT, BluepryntsClientConfig.SPEC);
     }
 
     @SubscribeEvent
@@ -39,5 +43,8 @@ public class BluepryntsModClient {
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new ConstructionSiteScreen(request)));
         ClientConstructionRequests.takePendingSlabRemoveScreen()
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new SlabRemoveScreen(request)));
+        for (var image : ClientConstructionRequests.takePendingPreviewImages()) {
+            ClientBlueprintPreviewCache.store(image.name(), image.variant(), image.mtime(), image.pngBytes());
+        }
     }
 }

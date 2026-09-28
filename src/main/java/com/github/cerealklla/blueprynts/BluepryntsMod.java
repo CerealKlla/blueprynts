@@ -10,6 +10,7 @@ import com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry;
 import com.github.cerealklla.blueprynts.construction.ActiveSiteRegistry;
 import com.github.cerealklla.blueprynts.construction.BeginConstructionPayload;
 import com.github.cerealklla.blueprynts.construction.BeginDesignPayload;
+import com.github.cerealklla.blueprynts.construction.BlueprintPreviewImagePayload;
 import com.github.cerealklla.blueprynts.construction.Column;
 import com.github.cerealklla.blueprynts.construction.ClientConstructionRequests;
 import com.github.cerealklla.blueprynts.construction.ConstructionProtectionListener;
@@ -20,6 +21,7 @@ import com.github.cerealklla.blueprynts.construction.LoadBlueprintPayload;
 import com.github.cerealklla.blueprynts.construction.OpenConstructionSiteScreenPayload;
 import com.github.cerealklla.blueprynts.construction.OpenSlabRemoveScreenPayload;
 import com.github.cerealklla.blueprynts.construction.RemoveSlabPayload;
+import com.github.cerealklla.blueprynts.construction.RequestBlueprintPreviewPayload;
 import com.github.cerealklla.blueprynts.construction.SaveBlueprintPayload;
 import com.github.cerealklla.blueprynts.construction.SetConstructionSiteOptionsPayload;
 import com.github.cerealklla.blueprynts.construction.SizeClass;
@@ -43,6 +45,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -114,6 +117,21 @@ public class BluepryntsMod {
                 (payload, context) -> ClientConstructionRequests.requestConstructionSiteScreen(payload));
         registrar.playToClient(OpenSlabRemoveScreenPayload.TYPE, OpenSlabRemoveScreenPayload.STREAM_CODEC,
                 (payload, context) -> ClientConstructionRequests.requestSlabRemoveScreen(payload));
+        registrar.playToClient(BlueprintPreviewImagePayload.TYPE, BlueprintPreviewImagePayload.STREAM_CODEC,
+                (payload, context) -> ClientConstructionRequests.requestStorePreviewImage(payload));
+
+        registrar.playToServer(RequestBlueprintPreviewPayload.TYPE, RequestBlueprintPreviewPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (!(context.player() instanceof ServerPlayer player)) {
+                        return;
+                    }
+                    var storage = com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get();
+                    storage.readPreviewBytes(payload.name(), payload.variant()).ifPresent(bytes -> {
+                        var availability = storage.previewAvailability(payload.name());
+                        long mtime = "small".equals(payload.variant()) ? availability.smallMtime() : availability.fullMtime();
+                        PacketDistributor.sendToPlayer(player, new BlueprintPreviewImagePayload(payload.name(), payload.variant(), mtime, bytes));
+                    });
+                });
 
         registrar.playToServer(SetConstructionSiteOptionsPayload.TYPE, SetConstructionSiteOptionsPayload.STREAM_CODEC,
                 (payload, context) -> withSite(payload.sitePos(), context, (level, player, site) -> {

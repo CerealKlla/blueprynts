@@ -29,7 +29,9 @@ public record OpenConstructionSiteScreenPayload(
         List<String> availableBlueprintTypeIds,
         List<String> availableBlueprintTypeLabels,
         int markedColumnCount,
-        List<String> savedBlueprintNames)
+        List<String> savedBlueprintNames,
+        List<Long> savedBlueprintFullPreviewMtimes,
+        List<Long> savedBlueprintSmallPreviewMtimes)
         implements CustomPacketPayload {
 
     public static final Type<OpenConstructionSiteScreenPayload> TYPE =
@@ -45,6 +47,8 @@ public record OpenConstructionSiteScreenPayload(
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8), OpenConstructionSiteScreenPayload::availableBlueprintTypeLabels,
             ByteBufCodecs.VAR_INT, OpenConstructionSiteScreenPayload::markedColumnCount,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8), OpenConstructionSiteScreenPayload::savedBlueprintNames,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.VAR_LONG), OpenConstructionSiteScreenPayload::savedBlueprintFullPreviewMtimes,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.VAR_LONG), OpenConstructionSiteScreenPayload::savedBlueprintSmallPreviewMtimes,
             OpenConstructionSiteScreenPayload::new);
 
     @Override

@@ -24,6 +24,15 @@ public final class SiteTerrainOps {
     // allowance (T5 = 14), so no floating overhangs survive leveling regardless of Tier.
     private static final int CLEAR_HEIGHT_ABOVE_GROUND = 24;
 
+    // How far past a *loaded* Blueprint's own footprint bounding box to level, on top of the 1-block
+    // margin the boundary ring itself needs to stand on. A real playtest bug: 1 block total wasn't
+    // enough to read as "a cleared plot" on uneven/hilly natural terrain -- from a normal viewing
+    // distance, untouched bumpy terrain was still visibly right up against the loaded structure,
+    // making it hard to tell the load had worked at all. This is a placeholder value (tune by feel),
+    // deliberately not tied to SizeClass -- Load's footprint size stays independent of whatever
+    // Size/Tier is currently selected, per the existing design decision.
+    private static final int LOAD_CLEARING_EXTRA_MARGIN = 4;
+
     private SiteTerrainOps() {
     }
 
@@ -179,9 +188,11 @@ public final class SiteTerrainOps {
 
     /**
      * The clearing area for Loading a Blueprint: the bounding box of the given relative columns
-     * (re-oriented against this site's own facing), expanded by one block of margin on every side
-     * so the boundary ring wall has somewhere to stand -- sized to the Blueprint's own stored
-     * footprint, not the Construction Site's current Size selection.
+     * (re-oriented against this site's own facing), expanded by one block of margin (so the boundary
+     * ring wall has somewhere to stand) plus {@link #LOAD_CLEARING_EXTRA_MARGIN} more (so the result
+     * actually reads as a cleared plot against uneven natural terrain, not just a tight box around
+     * the structure) -- sized to the Blueprint's own stored footprint, not the Construction Site's
+     * current Size selection.
      */
     public static OuterArea computeOuterAreaForFootprint(BlockPos sitePos, Direction intoSite, Collection<Column> relativeColumns) {
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
@@ -192,6 +203,7 @@ public final class SiteTerrainOps {
             minZ = Math.min(minZ, world.z());
             maxZ = Math.max(maxZ, world.z());
         }
-        return new OuterArea(minX - 1, maxX + 1, minZ - 1, maxZ + 1, sitePos.getY());
+        int margin = 1 + LOAD_CLEARING_EXTRA_MARGIN;
+        return new OuterArea(minX - margin, maxX + margin, minZ - margin, maxZ + margin, sitePos.getY());
     }
 }

@@ -140,7 +140,13 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
     public static void sendScreen(ServerPlayer player, BlockPos pos, ConstructionSiteBlockEntity site) {
         List<String> typeIds = BlueprintTypeRegistry.all().stream().map(t -> t.id().toString()).toList();
         List<String> typeLabels = BlueprintTypeRegistry.all().stream().map(BlueprintType::label).toList();
-        List<String> savedNames = com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get().listNames();
+        com.github.cerealklla.blueprynts.blueprint.BlueprintStorage storage =
+                com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get();
+        List<String> savedNames = storage.listNames();
+        List<Long> fullMtimes = savedNames.stream()
+                .map(name -> storage.previewAvailability(name).fullMtime()).toList();
+        List<Long> smallMtimes = savedNames.stream()
+                .map(name -> storage.previewAvailability(name).smallMtime()).toList();
         PacketDistributor.sendToPlayer(player, new OpenConstructionSiteScreenPayload(
                 pos,
                 site.phase().name(),
@@ -150,7 +156,9 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
                 typeIds,
                 typeLabels,
                 site.markedColumns().size(),
-                savedNames));
+                savedNames,
+                fullMtimes,
+                smallMtimes));
     }
 
     /**

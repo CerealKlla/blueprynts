@@ -22,7 +22,6 @@ public class ConstructionSiteScreen extends Screen {
 
     private final OpenConstructionSiteScreenPayload data;
     private EditBox saveNameBox;
-    private EditBox loadNameBox;
 
     public ConstructionSiteScreen(OpenConstructionSiteScreenPayload data) {
         super(Component.literal("Construction Site"));
@@ -69,10 +68,9 @@ public class ConstructionSiteScreen extends Screen {
         saveButton.active = constructing;
         y += 24;
 
-        loadNameBox = addRenderableWidget(new EditBox(font, x, y, 140, 20, Component.literal("Blueprint name")));
-        addRenderableWidget(Button.builder(Component.literal("Load"),
-                b -> send(new LoadBlueprintPayload(data.sitePos(), loadNameBox.getValue())))
-                .bounds(x + 144, y, 56, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Load..."),
+                b -> Minecraft.getInstance().setScreen(new BlueprintPickerScreen(data)))
+                .bounds(x, y, 200, 20).build());
         y += 30;
 
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose())
