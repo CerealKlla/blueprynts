@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.github.cerealklla.blueprynts.blueprint.TierSpec;
+import com.github.cerealklla.blueprynts.registration.ModBlocks;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -82,9 +83,9 @@ public final class SiteTerrainOps {
 
     /**
      * Flattens {@code area} to {@code area.groundY()}: clears everything above it up to a generous
-     * height (no floating overhangs), unconditionally sets the floor layer itself to brown wool (not
-     * just when it happened to be air), and unconditionally replaces a solid bedrock foundation
-     * reaching down to {@link TierSpec#maxDepthBelowGround()} below that.
+     * height (no floating overhangs), unconditionally sets the floor layer itself to {@link
+     * ExistingBlock} (not just when it happened to be air), and unconditionally replaces a solid
+     * bedrock foundation reaching down to {@link TierSpec#maxDepthBelowGround()} below that.
      *
      * <p>The floor/foundation used to only touch the surface layer, and only filled it if it was
      * literally air -- fine over ordinary land, but a real playtest bug in ice/ocean biomes: the
@@ -94,23 +95,26 @@ public final class SiteTerrainOps {
      * surrounding landscape once the area above it was cleared. Every touched position's original
      * state is still captured first, so a full clear/restore is unaffected.
      *
-     * <p>The floor uses the same brown wool as {@link #applyBelowGroundWool} (not dirt) so the two
-     * share one "untouched site filler, don't count it as player-built" meaning end to end -- the
-     * same sentinel {@link #spawnRefundPile} already treats as free below ground now also covers the
-     * floor row itself, and a footprint with subterranean access reads as one continuous placeholder
-     * material rather than two different ones split at the surface line. The floor is still always
-     * captured/pasted as a real state on save/load (`BlueprintCell`'s own {@code PRE_EXISTING} check
-     * stays scoped to below ground only, per the existing "the floor is never below ground" design
-     * decision) -- only the unconditional fill material itself changed, not that behavior.
+     * <p>The floor uses the same {@code ExistingBlock} sentinel as {@link #applyBelowGroundWool} (not
+     * real dirt, and not real brown wool either -- see that class's own doc for why it needs to be a
+     * genuinely distinct block) so the two share one "untouched site filler, don't count it as
+     * player-built" meaning end to end -- the same sentinel {@link #spawnRefundPile} already treats
+     * as free below ground now also covers the floor row itself, and a footprint with subterranean
+     * access reads as one continuous placeholder material rather than two different ones split at the
+     * surface line. The floor is still always captured/pasted as a real state on save/load
+     * (`BlueprintCell`'s own {@code PRE_EXISTING} check stays scoped to below ground only, per the
+     * existing "the floor is never below ground" design decision) -- only the unconditional fill
+     * material itself changed, not that behavior.
      */
     public static void levelClearingArea(ServerLevel level, OuterArea area, TerrainSnapshot snapshot) {
         int foundationDepth = TierSpec.maxDepthBelowGround();
+        BlockState existingBlock = ModBlocks.EXISTING_BLOCK.get().defaultBlockState();
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = area.minX(); x <= area.maxX(); x++) {
             for (int z = area.minZ(); z <= area.maxZ(); z++) {
                 cursor.set(x, area.groundY(), z);
                 snapshot.captureIfAbsent(cursor, level.getBlockState(cursor));
-                level.setBlock(cursor, Blocks.BROWN_WOOL.defaultBlockState(), 3);
+                level.setBlock(cursor, existingBlock, 3);
 
                 for (int y = area.groundY() - 1; y >= area.groundY() - foundationDepth; y--) {
                     cursor.set(x, y, z);
@@ -152,21 +156,22 @@ public final class SiteTerrainOps {
     }
 
     /**
-     * For every marked column, replaces relative Y {@code -1} through {@code -depth} with brown
-     * wool -- never the ground surface layer itself (relative Y 0), per the user's explicit
+     * For every marked column, replaces relative Y {@code -1} through {@code -depth} with {@link
+     * ExistingBlock} -- never the ground surface layer itself (relative Y 0), per the user's explicit
      * clarification that a structure's own floor is never "below ground."
      */
     public static void applyBelowGroundWool(ServerLevel level, Set<Column> markedColumns, int groundY, int depth, TerrainSnapshot snapshot) {
         if (depth <= 0) {
             return;
         }
+        BlockState existingBlock = ModBlocks.EXISTING_BLOCK.get().defaultBlockState();
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (Column column : markedColumns) {
             for (int i = 1; i <= depth; i++) {
                 cursor.set(column.x(), groundY - i, column.z());
                 BlockState state = level.getBlockState(cursor);
                 snapshot.captureIfAbsent(cursor, state);
-                level.setBlock(cursor, Blocks.BROWN_WOOL.defaultBlockState(), 3);
+                level.setBlock(cursor, existingBlock, 3);
             }
         }
     }
@@ -188,18 +193,20 @@ public final class SiteTerrainOps {
      * them to {@code sink} at {@code pileCenter} instead of at each individual position -- must be
      * called before {@link #restore} reverts the terrain back, since it reads the live state.
      *
-     * <p>Untouched brown wool at or below the floor row ({@code pos.getY() <= groundY}) is excluded
-     * even though it technically differs from the *pre-leveling* snapshot, since it's never something
-     * the player actually built -- {@link #levelClearingArea}/{@link #applyBelowGroundWool} both use
-     * it as the "untouched site filler" sentinel (the same one {@code BlueprintCell}'s own {@code
-     * PRE_EXISTING} check already uses for save), floor and below-ground alike. A real playtest
+     * <p>Untouched {@link ExistingBlock} at or below the floor row ({@code pos.getY() <= groundY}) is
+     * excluded even though it technically differs from the *pre-leveling* snapshot, since it's never
+     * something the player actually built -- {@link #levelClearingArea}/{@link #applyBelowGroundWool}
+     * both use it as the "untouched site filler" sentinel (the same one {@code BlueprintCell}'s own
+     * {@code PRE_EXISTING} check already uses for save), floor and below-ground alike. A real playtest
      * report ("free dirt, presumably from the floor row") is what surfaced this before the floor
-     * itself was unified onto the wool sentinel -- see {@link #levelClearingArea}'s own note. A floor
-     * or below-ground position the player deliberately replaced with something else still refunds
-     * normally, since only *untouched* wool is skipped.
+     * itself was unified onto this sentinel -- see {@link #levelClearingArea}'s own note. A floor or
+     * below-ground position the player deliberately replaced with something else -- including with
+     * real {@code Blocks.BROWN_WOOL}, genuinely distinct from the {@code ExistingBlock} sentinel
+     * despite looking identical -- still refunds normally, since only the *untouched sentinel itself*
+     * is skipped.
      */
     public static void spawnRefundPile(ServerLevel level, TerrainSnapshot snapshot, int groundY, Vec3 pileCenter, RefundSink sink) {
-        BlockState untouchedWool = Blocks.BROWN_WOOL.defaultBlockState();
+        BlockState existingBlock = ModBlocks.EXISTING_BLOCK.get().defaultBlockState();
         for (Map.Entry<BlockPos, BlockState> entry : snapshot.capturedStates().entrySet()) {
             BlockPos pos = entry.getKey();
             BlockState original = entry.getValue();
@@ -207,7 +214,7 @@ public final class SiteTerrainOps {
             if (live.equals(original)) {
                 continue;
             }
-            if (pos.getY() <= groundY && live.equals(untouchedWool)) {
+            if (pos.getY() <= groundY && live.equals(existingBlock)) {
                 continue;
             }
             BlockEntity blockEntity = live.hasBlockEntity() ? level.getBlockEntity(pos) : null;

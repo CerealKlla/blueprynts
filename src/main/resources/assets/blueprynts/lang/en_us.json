@@ -1,4 +1,5 @@
 {
   "block.blueprynts.construction_site": "Construction Site",
-  "block.blueprynts.footprint_slab": "Footprint Slab"
+  "block.blueprynts.footprint_slab": "Footprint Slab",
+  "block.blueprynts.existing_block": "Existing Block"
 }

@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "blueprynts:block/existing_block" }
+  }
+}

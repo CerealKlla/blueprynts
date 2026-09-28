@@ -268,7 +268,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         Direction intoSite = intoSite();
         List<Column> relativeColumns = new ArrayList<>();
         List<BlueprintCell> cells = new ArrayList<>();
-        BlockState untouchedWool = net.minecraft.world.level.block.Blocks.BROWN_WOOL.defaultBlockState();
+        BlockState existingBlock = com.github.cerealklla.blueprynts.registration.ModBlocks.EXISTING_BLOCK.get().defaultBlockState();
 
         for (Column column : markedColumns) {
             Column relative = SiteTerrainOps.toRelativeColumn(getBlockPos(), intoSite, column.x(), column.z());
@@ -276,7 +276,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             for (int relY = -spec.depthBelowGround(); relY <= spec.heightAboveGround(); relY++) {
                 BlockPos worldPos = new BlockPos(column.x(), groundY + relY, column.z());
                 BlockState state = level.getBlockState(worldPos);
-                if (relY < 0 && state.equals(untouchedWool)) {
+                if (relY < 0 && state.equals(existingBlock)) {
                     cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.empty()));
                 } else {
                     cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.of(state)));

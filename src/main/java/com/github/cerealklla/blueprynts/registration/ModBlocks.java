@@ -2,6 +2,7 @@ package com.github.cerealklla.blueprynts.registration;
 
 import com.github.cerealklla.blueprynts.BluepryntsMod;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteBlock;
+import com.github.cerealklla.blueprynts.construction.ExistingBlock;
 import com.github.cerealklla.blueprynts.construction.FootprintSlabBlock;
 
 import net.minecraft.core.registries.Registries;
@@ -40,6 +41,18 @@ public final class ModBlocks {
                     .mapColor(MapColor.QUARTZ)
                     .strength(-1.0F, 3600000.0F) // unbreakable, same convention as Blocks.BEDROCK
                     .sound(SoundType.STONE)
+                    .setId(ResourceKey.create(Registries.BLOCK, id))));
+
+    // The "untouched site filler" sentinel (see ExistingBlock's own doc) -- visually brown wool,
+    // genuinely a different block, so a player's own real brown wool is never mistaken for it.
+    // Deliberately no registered BlockItem below -- this block is never meant to be obtainable at
+    // all, only ever placed programmatically by SiteTerrainOps.
+    public static final DeferredBlock<ExistingBlock> EXISTING_BLOCK = BLOCKS.register(
+            "existing_block",
+            id -> new ExistingBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_BROWN)
+                    .strength(-1.0F, 3600000.0F) // unbreakable, same convention as Blocks.BEDROCK
+                    .sound(SoundType.WOOL)
                     .setId(ResourceKey.create(Registries.BLOCK, id))));
 
     public static final DeferredItem<BlockItem> CONSTRUCTION_SITE_ITEM = ITEMS.registerSimpleBlockItem(CONSTRUCTION_SITE);
