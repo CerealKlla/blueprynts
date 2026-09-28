@@ -2,6 +2,7 @@ package com.github.cerealklla.blueprynts.construction;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import com.github.cerealklla.blueprynts.blueprint.TierSpec;
@@ -9,8 +10,12 @@ import com.github.cerealklla.blueprynts.blueprint.TierSpec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Pure-ish terrain operations for the Construction Site mechanic. Everything here works in
@@ -77,9 +82,9 @@ public final class SiteTerrainOps {
 
     /**
      * Flattens {@code area} to {@code area.groundY()}: clears everything above it up to a generous
-     * height (no floating overhangs), unconditionally sets the floor layer itself to dirt (not just
-     * when it happened to be air), and unconditionally replaces a solid bedrock foundation reaching
-     * down to {@link TierSpec#maxDepthBelowGround()} below that.
+     * height (no floating overhangs), unconditionally sets the floor layer itself to brown wool (not
+     * just when it happened to be air), and unconditionally replaces a solid bedrock foundation
+     * reaching down to {@link TierSpec#maxDepthBelowGround()} below that.
      *
      * <p>The floor/foundation used to only touch the surface layer, and only filled it if it was
      * literally air -- fine over ordinary land, but a real playtest bug in ice/ocean biomes: the
@@ -88,6 +93,15 @@ public final class SiteTerrainOps {
      * sitting on top of whatever unstable terrain was actually there, visibly floating above the
      * surrounding landscape once the area above it was cleared. Every touched position's original
      * state is still captured first, so a full clear/restore is unaffected.
+     *
+     * <p>The floor uses the same brown wool as {@link #applyBelowGroundWool} (not dirt) so the two
+     * share one "untouched site filler, don't count it as player-built" meaning end to end -- the
+     * same sentinel {@link #spawnRefundPile} already treats as free below ground now also covers the
+     * floor row itself, and a footprint with subterranean access reads as one continuous placeholder
+     * material rather than two different ones split at the surface line. The floor is still always
+     * captured/pasted as a real state on save/load (`BlueprintCell`'s own {@code PRE_EXISTING} check
+     * stays scoped to below ground only, per the existing "the floor is never below ground" design
+     * decision) -- only the unconditional fill material itself changed, not that behavior.
      */
     public static void levelClearingArea(ServerLevel level, OuterArea area, TerrainSnapshot snapshot) {
         int foundationDepth = TierSpec.maxDepthBelowGround();
@@ -96,7 +110,7 @@ public final class SiteTerrainOps {
             for (int z = area.minZ(); z <= area.maxZ(); z++) {
                 cursor.set(x, area.groundY(), z);
                 snapshot.captureIfAbsent(cursor, level.getBlockState(cursor));
-                level.setBlock(cursor, Blocks.DIRT.defaultBlockState(), 3);
+                level.setBlock(cursor, Blocks.BROWN_WOOL.defaultBlockState(), 3);
 
                 for (int y = area.groundY() - 1; y >= area.groundY() - foundationDepth; y--) {
                     cursor.set(x, y, z);
@@ -160,6 +174,66 @@ public final class SiteTerrainOps {
     /** Replays every captured original state verbatim -- used for both a deliberate clear and the auto-clear/anti-farming safeguard. */
     public static void restore(ServerLevel level, TerrainSnapshot snapshot) {
         snapshot.capturedStates().forEach((pos, state) -> level.setBlock(pos, state, 3));
+    }
+
+    /** Where a refund drop actually ends up -- a plain scattered {@code ItemEntity} by default, or a Yconomics Loot Bag if that's loaded (see {@code bridge.YconomicsLootBridge}). */
+    @FunctionalInterface
+    public interface RefundSink {
+        void deposit(ServerLevel level, Vec3 pos, ItemStack stack);
+    }
+
+    /**
+     * For every captured position whose live state no longer matches its snapshotted original (i.e.
+     * something the player actually built or changed), computes that block's normal drops and hands
+     * them to {@code sink} at {@code pileCenter} instead of at each individual position -- must be
+     * called before {@link #restore} reverts the terrain back, since it reads the live state.
+     *
+     * <p>Untouched brown wool at or below the floor row ({@code pos.getY() <= groundY}) is excluded
+     * even though it technically differs from the *pre-leveling* snapshot, since it's never something
+     * the player actually built -- {@link #levelClearingArea}/{@link #applyBelowGroundWool} both use
+     * it as the "untouched site filler" sentinel (the same one {@code BlueprintCell}'s own {@code
+     * PRE_EXISTING} check already uses for save), floor and below-ground alike. A real playtest
+     * report ("free dirt, presumably from the floor row") is what surfaced this before the floor
+     * itself was unified onto the wool sentinel -- see {@link #levelClearingArea}'s own note. A floor
+     * or below-ground position the player deliberately replaced with something else still refunds
+     * normally, since only *untouched* wool is skipped.
+     */
+    public static void spawnRefundPile(ServerLevel level, TerrainSnapshot snapshot, int groundY, Vec3 pileCenter, RefundSink sink) {
+        BlockState untouchedWool = Blocks.BROWN_WOOL.defaultBlockState();
+        for (Map.Entry<BlockPos, BlockState> entry : snapshot.capturedStates().entrySet()) {
+            BlockPos pos = entry.getKey();
+            BlockState original = entry.getValue();
+            BlockState live = level.getBlockState(pos);
+            if (live.equals(original)) {
+                continue;
+            }
+            if (pos.getY() <= groundY && live.equals(untouchedWool)) {
+                continue;
+            }
+            BlockEntity blockEntity = live.hasBlockEntity() ? level.getBlockEntity(pos) : null;
+            for (ItemStack drop : Block.getDrops(live, level, pos, blockEntity)) {
+                if (!drop.isEmpty()) {
+                    sink.deposit(level, pileCenter, drop);
+                }
+            }
+        }
+    }
+
+    /**
+     * The vanilla {@link net.minecraft.world.level.block.Rotation} that maps {@code from} onto
+     * {@code to} -- e.g. {@code rotationBetween(NORTH, SOUTH) == CLOCKWISE_180}. Used to re-orient a
+     * loaded Blueprint cell's own {@code BlockState} (see {@code ConstructionSiteBlockEntity#loadBlueprint})
+     * the same way {@link #toWorldColumn} already re-orients its position -- both directions are
+     * always one of the four horizontal cardinals here, so exactly one of the four {@code Rotation}
+     * values always matches.
+     */
+    public static net.minecraft.world.level.block.Rotation rotationBetween(Direction from, Direction to) {
+        for (net.minecraft.world.level.block.Rotation rotation : net.minecraft.world.level.block.Rotation.values()) {
+            if (rotation.rotate(from) == to) {
+                return rotation;
+            }
+        }
+        return net.minecraft.world.level.block.Rotation.NONE;
     }
 
     /**

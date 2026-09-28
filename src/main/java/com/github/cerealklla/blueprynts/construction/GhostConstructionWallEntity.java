@@ -57,6 +57,13 @@ public class GhostConstructionWallEntity extends Display.BlockDisplay {
         }
     }
 
+    /** Raises a single-layer glass ceiling over every footprint column at {@code y} -- typically one above the Tier's height limit, the same as the protection guard's own inclusive bound, so it visually caps the buildable volume. */
+    public static void raiseCeiling(ServerLevel level, BlockPos sitePos, Set<Column> footprint, int y, UUID viewerId) {
+        for (Column column : footprint) {
+            create(level, column.x(), y, column.z(), sitePos, viewerId);
+        }
+    }
+
     public static List<GhostConstructionWallEntity> findByOwnerSite(ServerLevel level, BlockPos ownerSitePos) {
         AABB searchBox = new AABB(
                 ownerSitePos.getX() - SEARCH_RADIUS_BLOCKS, level.getMinY(), ownerSitePos.getZ() - SEARCH_RADIUS_BLOCKS,

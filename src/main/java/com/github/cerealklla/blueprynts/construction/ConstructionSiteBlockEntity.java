@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * The Construction Site's live state: pending Size/Tier/Blueprint Type, the current {@link
@@ -47,6 +48,10 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
     private UUID activePlayer;
     private final Set<Column> markedColumns = new HashSet<>();
     private TerrainSnapshot snapshot = new TerrainSnapshot();
+    // Excludes a Load-originated session's terrain from the refund pile (restoreAndReset) -- a
+    // player must build something fresh to be refunded, not repeatedly load the same Blueprint and
+    // farm free materials from clearing it.
+    private boolean contentFromLoad = false;
 
     public ConstructionSiteBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.CONSTRUCTION_SITE.get(), pos, state);
@@ -141,6 +146,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         SiteTerrainOps.levelClearingArea(level, area, snapshot);
 
         markedColumns.clear();
+        contentFromLoad = false;
         phase = ConstructionSitePhase.DESIGNING;
         ActiveSiteRegistry.register(activePlayer, net.minecraft.core.GlobalPos.of(level.dimension(), getBlockPos()));
         setChanged();
@@ -177,7 +183,13 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
 
         Set<Column> ring = SiteTerrainOps.computeBoundaryRing(markedColumns);
         TierSpec spec = TierSpec.fromOrdinal(tier);
-        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, spec.heightAboveGround(), activePlayer);
+        // +1: the protection guard allows building through relative Y = +heightAboveGround
+        // inclusive, so the wall itself must span one block taller than heightAboveGround to
+        // actually enclose that topmost buildable layer -- otherwise it stops one row short of
+        // where the ceiling sits, leaving a visible gap between wall and ceiling (a real playtest
+        // report, only noticeable once the ceiling gave something to compare the wall's top against).
+        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, spec.heightAboveGround() + 1, activePlayer);
+        GhostConstructionWallEntity.raiseCeiling(level, getBlockPos(), markedColumns, groundY + spec.heightAboveGround() + 1, activePlayer);
         SiteTerrainOps.applyBelowGroundWool(level, markedColumns, groundY, spec.depthBelowGround(), snapshot);
 
         phase = ConstructionSitePhase.CONSTRUCTING;
@@ -221,10 +233,19 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         if (activePlayer != null && level.getServer().getPlayerList().getPlayer(activePlayer) instanceof Player onlinePlayer) {
             clearRemainingSlabItems(onlinePlayer);
         }
+        if (!contentFromLoad) {
+            BlockPos p = getBlockPos();
+            Vec3 pileCenter = new Vec3(p.getX() + 0.5, p.getY() + 1.0, p.getZ() + 0.5);
+            SiteTerrainOps.RefundSink sink = net.neoforged.fml.ModList.get().isLoaded("yconomics")
+                    ? com.github.cerealklla.blueprynts.bridge.YconomicsLootBridge::depositOrScatter
+                    : (lvl, pos, stack) -> lvl.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(lvl, pos.x, pos.y, pos.z, stack));
+            SiteTerrainOps.spawnRefundPile(level, snapshot, groundY, pileCenter, sink);
+        }
         SiteTerrainOps.restore(level, snapshot);
         GhostConstructionWallEntity.discardAll(level, getBlockPos());
         markedColumns.clear();
         snapshot = new TerrainSnapshot();
+        contentFromLoad = false;
         phase = ConstructionSitePhase.IDLE;
         if (activePlayer != null) {
             ActiveSiteRegistry.unregister(activePlayer);
@@ -264,7 +285,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         }
 
         BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
-                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells);
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells, intoSite);
         BlueprintStorage.get().save(record);
         return null;
     }
@@ -286,6 +307,17 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         Direction intoSite = intoSite();
         int groundY = getBlockPos().getY();
 
+        // Re-orients each cell's own BlockState (a stair's facing, a sign's rotation, etc. -- all
+        // captured as absolute compass directions) to match this loading site, the same way
+        // relativeColumns already re-orients positions -- without it, a Blueprint saved at a site
+        // facing a different direction pastes with correct shape but individually wrong-facing
+        // blocks (a real playtest report: stairs 180 degrees off). null facing() (a file saved
+        // before this existed) means no correction is possible, so it's left unrotated rather than
+        // guessing.
+        net.minecraft.world.level.block.Rotation cellRotation = record.facing() == null
+                ? net.minecraft.world.level.block.Rotation.NONE
+                : SiteTerrainOps.rotationBetween(record.facing(), intoSite);
+
         snapshot = new TerrainSnapshot();
         SiteTerrainOps.OuterArea area = SiteTerrainOps.computeOuterAreaForFootprint(getBlockPos(), intoSite, record.relativeColumns());
         SiteTerrainOps.levelClearingArea(level, area, snapshot);
@@ -302,13 +334,17 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             Column world = SiteTerrainOps.toWorldColumn(getBlockPos(), intoSite, new Column(cell.relX(), cell.relZ()));
             BlockPos worldPos = new BlockPos(world.x(), groundY + cell.relY(), world.z());
             snapshot.captureIfAbsent(worldPos, level.getBlockState(worldPos));
-            level.setBlock(worldPos, cell.state().orElseThrow(), 3);
+            level.setBlock(worldPos, cell.state().orElseThrow().rotate(cellRotation), 3);
         }
 
         blueprintTypeId = record.blueprintTypeId();
         Set<Column> ring = SiteTerrainOps.computeBoundaryRing(markedColumns);
-        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, record.height(), activePlayer);
+        // +1: same reasoning as beginConstruction -- the wall must reach the topmost buildable
+        // layer (relative Y = record.height(), inclusive) to actually meet the ceiling above it.
+        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, record.height() + 1, activePlayer);
+        GhostConstructionWallEntity.raiseCeiling(level, getBlockPos(), markedColumns, groundY + record.height() + 1, activePlayer);
 
+        contentFromLoad = true;
         phase = ConstructionSitePhase.CONSTRUCTING;
         ActiveSiteRegistry.register(activePlayer, net.minecraft.core.GlobalPos.of(level.dimension(), getBlockPos()));
         setChanged();
@@ -326,6 +362,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         markedColumns.clear();
         markedColumns.addAll(input.read("MarkedColumns", Column.CODEC.listOf()).orElse(List.of()));
         snapshot = input.read("Snapshot", TerrainSnapshot.CODEC).orElse(new TerrainSnapshot());
+        contentFromLoad = input.getBooleanOr("ContentFromLoad", false);
     }
 
     @Override
@@ -338,5 +375,6 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         output.storeNullable("ActivePlayer", UUIDUtil.CODEC, activePlayer);
         output.store("MarkedColumns", Column.CODEC.listOf(), List.copyOf(markedColumns));
         output.store("Snapshot", TerrainSnapshot.CODEC, snapshot);
+        output.putBoolean("ContentFromLoad", contentFromLoad);
     }
 }

@@ -37,3 +37,13 @@ save/load the result as a reusable Blueprint.
     reason="Registers Blueprynts' built-in Blueprint Types as Settlemynts Zone Types if present."
     ordering="AFTER"
     side="BOTH"
+
+# Optional soft dependency -- a Construction Site's refund pile deposits into Yconomics' own Loot
+# Bag entity if present (see bridge.YconomicsLootBridge); it falls back to a plain scattered
+# ItemEntity without it. Same no-versionRange reasoning as the Settlemynts entry above.
+[[dependencies.${mod_id}]]
+    modId="yconomics"
+    type="optional"
+    reason="Deposits a Construction Site's refund pile into a Yconomics Loot Bag if present."
+    ordering="AFTER"
+    side="BOTH"

@@ -1,12 +1,14 @@
 package com.github.cerealklla.blueprynts.blueprint;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import com.github.cerealklla.blueprynts.construction.Column;
 
+import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 
 /**
@@ -17,6 +19,17 @@ import net.minecraft.resources.Identifier;
  * "does this fit the current selection" reconciliation, per the user's explicit correction -- and
  * re-orients against the *loading* site's own facing, so it pastes correctly regardless of which
  * direction that site happens to face.
+ *
+ * <p>{@link #facing()} is the saving site's own {@code intoSite()} direction -- needed so Load can
+ * rotate each cell's own {@code BlockState} (a stair's {@code facing}, a sign's {@code rotation},
+ * etc., all absolute compass directions as captured) to match the *loading* site's facing, the same
+ * way {@link #relativeColumns()} already re-orients positions. Without this, only the footprint's
+ * shape re-orients correctly -- individual blocks' own facing stays fixed to whatever direction the
+ * saving site originally faced, visibly wrong (e.g. stairs 180 degrees off) whenever the loading
+ * site faces a different direction than the one the Blueprint was saved at. {@code null} for files
+ * saved before this field existed -- {@code loadBlueprint} treats that as "no correction possible"
+ * and skips rotation entirely, rather than guessing a default that could rotate an old file wrong a
+ * second way.
  */
 public record BlueprintRecord(
         int templateVersion,
@@ -29,7 +42,8 @@ public record BlueprintRecord(
         List<Column> relativeColumns,
         int height,
         int depth,
-        List<BlueprintCell> cells) {
+        List<BlueprintCell> cells,
+        Direction facing) {
 
     /**
      * Bump this whenever a change to this record's own JSON shape would otherwise break reading
@@ -51,18 +65,20 @@ public record BlueprintRecord(
             Column.CODEC.listOf().fieldOf("columns").forGetter(BlueprintRecord::relativeColumns),
             Codec.INT.fieldOf("height").forGetter(BlueprintRecord::height),
             Codec.INT.fieldOf("depth").forGetter(BlueprintRecord::depth),
-            BlueprintCell.CODEC.listOf().fieldOf("cells").forGetter(BlueprintRecord::cells)
-    ).apply(i, BlueprintRecord::new));
+            BlueprintCell.CODEC.listOf().fieldOf("cells").forGetter(BlueprintRecord::cells),
+            Direction.CODEC.optionalFieldOf("facing").forGetter(r -> Optional.ofNullable(r.facing()))
+    ).apply(i, (templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing) ->
+            new BlueprintRecord(templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing.orElse(null))));
 
     /** Same record with a different {@link #status()} -- used when a Blueprint is moved between review folders. */
     public BlueprintRecord withStatus(BlueprintStatus newStatus) {
-        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells);
+        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing);
     }
 
     /** Same record with one more vote appended to the permanent review history -- never replaces or removes a prior vote. */
     public BlueprintRecord withAddedReview(BlueprintReview review) {
         List<BlueprintReview> updated = new java.util.ArrayList<>(reviews);
         updated.add(review);
-        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells);
+        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells, facing);
     }
 }

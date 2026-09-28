@@ -121,12 +121,19 @@ dependencies {
     // least once before building this project, or this dependency won't resolve.
     compileOnly files("../Settlemynts/build/libs/settlemynts-${settlemynts_version}.jar")
 
-    // Deliberately no testCompileOnly/testRuntimeOnly on Settlemynts' jar -- none of these tests
-    // reference it, and including it would pull Settlemynts' own mod metadata into the neoForge
-    // unitTest{} FML-bootstrap classpath, which then fails to load because Settlemynts itself
-    // requires Cartographyr (not present here at all, main or test). Plain JUnit 5 for pure logic
-    // tests (SlabBudget/TierSpec/SiteTerrainOps capture-restore round trip) that don't need a live
-    // server/registry, so that FML-bootstrap machinery isn't required for them anyway.
+    // Yconomics is an optional soft dependency (see neoforge.mods.toml) -- the refund pile deposits
+    // into Yconomics' own Loot Bag entity when present (bag.LootBagListener#depositOrScatter, the
+    // exact same clustering a voluntary/death drop goes through -- see bridge.YconomicsLootBridge),
+    // falling back to a plain scattered ItemEntity when it's not. Same compileOnly-only shape as
+    // Settlemynts above.
+    compileOnly files("../Yconomics/build/libs/yconomics-${yconomics_version}.jar")
+
+    // Deliberately no testCompileOnly/testRuntimeOnly on Settlemynts' or Yconomics' jars -- none of
+    // these tests reference either, and including Settlemynts would pull its own mod metadata into
+    // the neoForge unitTest{} FML-bootstrap classpath, which then fails to load because Settlemynts
+    // itself requires Cartographyr (not present here at all, main or test). Plain JUnit 5 for pure
+    // logic tests (SlabBudget/TierSpec/SiteTerrainOps capture-restore round trip) that don't need a
+    // live server/registry, so that FML-bootstrap machinery isn't required for them anyway.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
