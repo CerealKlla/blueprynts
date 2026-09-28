@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.github.cerealklla.blueprynts.blueprint.BlueprintCell;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintRecord;
+import com.github.cerealklla.blueprynts.blueprint.BlueprintStatus;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintStorage;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintType;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry;
@@ -262,14 +263,15 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             }
         }
 
-        BlueprintRecord record = new BlueprintRecord(name, blueprintTypeId, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells);
-        BlueprintStorage.get(level).save(record);
+        BlueprintRecord record = new BlueprintRecord(name, player.getName().getString(), BlueprintStatus.UNREVIEWED,
+                blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells);
+        BlueprintStorage.get().save(record);
         return null;
     }
 
     /** @return an error message, or {@code null} on success. */
     public String loadBlueprint(ServerLevel level, String name, Player player) {
-        Optional<BlueprintRecord> found = BlueprintStorage.get(level).load(name);
+        Optional<BlueprintRecord> found = BlueprintStorage.get().load(name);
         if (found.isEmpty()) {
             return "No Blueprint named '" + name + "'.";
         }

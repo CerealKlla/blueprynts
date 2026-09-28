@@ -20,7 +20,10 @@ import net.minecraft.resources.Identifier;
  */
 public record BlueprintRecord(
         String name,
+        String author,
+        BlueprintStatus status,
         Identifier blueprintTypeId,
+        int tier,
         List<Column> relativeColumns,
         int height,
         int depth,
@@ -28,10 +31,19 @@ public record BlueprintRecord(
 
     public static final Codec<BlueprintRecord> CODEC = RecordCodecBuilder.create(i -> i.group(
             Codec.STRING.fieldOf("name").forGetter(BlueprintRecord::name),
+            Codec.STRING.fieldOf("author").forGetter(BlueprintRecord::author),
+            Codec.STRING.xmap(s -> BlueprintStatus.valueOf(s.toUpperCase()), BlueprintStatus::name)
+                    .optionalFieldOf("status", BlueprintStatus.UNREVIEWED).forGetter(BlueprintRecord::status),
             Identifier.CODEC.fieldOf("blueprint_type").forGetter(BlueprintRecord::blueprintTypeId),
+            Codec.INT.fieldOf("tier").forGetter(BlueprintRecord::tier),
             Column.CODEC.listOf().fieldOf("columns").forGetter(BlueprintRecord::relativeColumns),
             Codec.INT.fieldOf("height").forGetter(BlueprintRecord::height),
             Codec.INT.fieldOf("depth").forGetter(BlueprintRecord::depth),
             BlueprintCell.CODEC.listOf().fieldOf("cells").forGetter(BlueprintRecord::cells)
     ).apply(i, BlueprintRecord::new));
+
+    /** Same record with a different {@link #status()} -- used when a Blueprint is moved between review folders. */
+    public BlueprintRecord withStatus(BlueprintStatus newStatus) {
+        return new BlueprintRecord(name, author, newStatus, blueprintTypeId, tier, relativeColumns, height, depth, cells);
+    }
 }

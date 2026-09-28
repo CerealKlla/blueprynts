@@ -1,58 +1,147 @@
 package com.github.cerealklla.blueprynts.blueprint;
 
-import java.util.HashMap;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiConsumer;
+import java.util.stream.Stream;
 
-import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.mojang.serialization.JsonOps;
 
-import com.github.cerealklla.blueprynts.BluepryntsMod;
+import net.neoforged.fml.loading.FMLPaths;
 
-import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.saveddata.SavedDataType;
+/**
+ * Global, file-based store of every saved {@link BlueprintRecord} -- one JSON file per Blueprint,
+ * living outside any world save (under the game instance root, not a {@code saves/<world>} folder)
+ * so wiping/recreating the world/server never loses them, and available from every
+ * dimension/world alike (replacing the old per-dimension {@code SavedData} approach).
+ *
+ * <p>Directory layout mirrors the Blueprint's own Status/Type/Tier, per the user's explicit request:
+ * <pre>
+ * blueprynts/blueprints/&lt;Status&gt;/&lt;Type label&gt;/Tier &lt;N&gt;/&lt;Blueprint Name&gt; - &lt;Author&gt;.json
+ * </pre>
+ * Not a cache -- every read/write goes straight to disk. Blueprint counts are expected to be small
+ * (authored content, not per-player data), so a full directory walk on load/list is acceptable.
+ */
+public final class BlueprintStorage {
 
-/** Level-scoped persistent store of every saved {@link BlueprintRecord}, keyed by name. */
-public final class BlueprintStorage extends SavedData {
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String EXTENSION = ".json";
 
-    public static final SavedDataType<BlueprintStorage> TYPE = new SavedDataType<>(
-            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "blueprints"),
-            BlueprintStorage::new,
-            codec());
+    private static final BlueprintStorage INSTANCE = new BlueprintStorage();
 
-    private final Map<String, BlueprintRecord> byName;
+    private final Path root;
 
     private BlueprintStorage() {
-        this(new HashMap<>());
+        this.root = FMLPaths.GAMEDIR.get().resolve("blueprynts").resolve("blueprints");
     }
 
-    private BlueprintStorage(Map<String, BlueprintRecord> byName) {
-        this.byName = byName;
-    }
-
-    private static Codec<BlueprintStorage> codec() {
-        return RecordCodecBuilder.create(i -> i.group(
-                Codec.unboundedMap(Codec.STRING, BlueprintRecord.CODEC).fieldOf("blueprints").forGetter(d -> d.byName)
-        ).apply(i, data -> new BlueprintStorage(new HashMap<>(data))));
-    }
-
-    public static BlueprintStorage get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(TYPE);
+    public static BlueprintStorage get() {
+        return INSTANCE;
     }
 
     public void save(BlueprintRecord record) {
-        byName.put(record.name(), record);
-        setDirty();
+        // Remove any previous copy first (e.g. a re-save after the Type/Tier changed, or a status
+        // move) so it never lingers as a stale duplicate under the old path.
+        deleteExisting(record.name());
+
+        Path dir = directoryFor(record);
+        try {
+            Files.createDirectories(dir);
+            Path file = dir.resolve(fileNameFor(record));
+            JsonElement json = BlueprintRecord.CODEC.encodeStart(JsonOps.INSTANCE, record)
+                    .getOrThrow(msg -> new IOException("Failed to encode Blueprint '" + record.name() + "': " + msg));
+            Files.writeString(file, GSON.toJson(json), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save Blueprint '" + record.name() + "'", e);
+        }
     }
 
     public Optional<BlueprintRecord> load(String name) {
-        return Optional.ofNullable(byName.get(name));
+        return findFile(name).map(this::readRecord);
     }
 
     public List<String> listNames() {
-        return List.copyOf(byName.keySet());
+        List<String> names = new ArrayList<>();
+        forEachRecord((path, record) -> names.add(record.name()));
+        return names;
+    }
+
+    private Path directoryFor(BlueprintRecord record) {
+        String typeLabel = BlueprintTypeRegistry.get(record.blueprintTypeId())
+                .map(BlueprintType::label)
+                .orElse(record.blueprintTypeId().getPath());
+        return root.resolve(sanitize(record.status().label()))
+                .resolve(sanitize(typeLabel))
+                .resolve("Tier " + record.tier());
+    }
+
+    private String fileNameFor(BlueprintRecord record) {
+        return sanitize(record.name()) + " - " + sanitize(record.author()) + EXTENSION;
+    }
+
+    /** Blueprint names/authors are player-supplied -- keep them filesystem-safe without silently colliding. */
+    private static String sanitize(String value) {
+        return value.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+    }
+
+    private Optional<Path> findFile(String name) {
+        if (!Files.isDirectory(root)) {
+            return Optional.empty();
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(p -> p.toString().endsWith(EXTENSION))
+                    .filter(p -> {
+                        BlueprintRecord record = readRecord(p);
+                        return record != null && record.name().equals(name);
+                    })
+                    .findFirst();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to search Blueprint store", e);
+        }
+    }
+
+    private void deleteExisting(String name) {
+        findFile(name).ifPresent(path -> {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to remove previous copy of Blueprint '" + name + "'", e);
+            }
+        });
+    }
+
+    private void forEachRecord(BiConsumer<Path, BlueprintRecord> consumer) {
+        if (!Files.isDirectory(root)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            walk.filter(p -> p.toString().endsWith(EXTENSION)).forEach(path -> {
+                BlueprintRecord record = readRecord(path);
+                if (record != null) {
+                    consumer.accept(path, record);
+                }
+            });
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list Blueprint store", e);
+        }
+    }
+
+    private BlueprintRecord readRecord(Path file) {
+        try {
+            String json = Files.readString(file, StandardCharsets.UTF_8);
+            JsonElement element = GSON.fromJson(json, JsonElement.class);
+            return BlueprintRecord.CODEC.parse(JsonOps.INSTANCE, element)
+                    .getOrThrow(msg -> new IOException("Failed to decode " + file + ": " + msg));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read Blueprint file " + file, e);
+        }
     }
 }

@@ -140,9 +140,7 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
     public static void sendScreen(ServerPlayer player, BlockPos pos, ConstructionSiteBlockEntity site) {
         List<String> typeIds = BlueprintTypeRegistry.all().stream().map(t -> t.id().toString()).toList();
         List<String> typeLabels = BlueprintTypeRegistry.all().stream().map(BlueprintType::label).toList();
-        List<String> savedNames = player.level() instanceof ServerLevel serverLevel
-                ? com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get(serverLevel).listNames()
-                : List.of();
+        List<String> savedNames = com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get().listNames();
         PacketDistributor.sendToPlayer(player, new OpenConstructionSiteScreenPayload(
                 pos,
                 site.phase().name(),
