@@ -1,13 +1,18 @@
 package com.github.cerealklla.blueprynts.registration;
 
 import com.github.cerealklla.blueprynts.BluepryntsMod;
+import com.github.cerealklla.blueprynts.construction.BuildingLocatorItem;
+import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlock;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteBlock;
 import com.github.cerealklla.blueprynts.construction.ExistingBlock;
 import com.github.cerealklla.blueprynts.construction.FootprintSlabBlock;
+import com.github.cerealklla.blueprynts.construction.SupplyBoxLocatorItem;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -60,6 +65,38 @@ public final class ModBlocks {
                     .sound(SoundType.WOOL)
                     .setId(ResourceKey.create(Registries.BLOCK, id))));
 
+    // The Building Supply Box (design-document.md's root "Construction Material Reservoir" concept --
+    // a distinct block from CONSTRUCTION_SITE above, see ConstructionBoxBlockEntity's own doc).
+    // Indestructible/unmovable per the design doc, same convention as FOOTPRINT_SLAB above.
+    // Deliberately no registered BlockItem -- never picked up as inventory item, only ever created
+    // programmatically (api.Blueprynts#createConstructionBox, or SUPPLY_BOX_LOCATOR_ITEM's own
+    // right-click-to-place re-creation during "Reposition Supply Box," 2026-09-29).
+    public static final DeferredBlock<ConstructionBoxBlock> CONSTRUCTION_BOX = BLOCKS.register(
+            "construction_box",
+            id -> new ConstructionBoxBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.WOOD)
+                    .strength(-1.0F, 3600000.0F) // unbreakable, same convention as Blocks.BEDROCK
+                    .sound(SoundType.WOOD)
+                    .setId(ResourceKey.create(Registries.BLOCK, id))));
+
     public static final DeferredItem<BlockItem> CONSTRUCTION_SITE_ITEM = ITEMS.registerSimpleBlockItem(CONSTRUCTION_SITE);
     public static final DeferredItem<BlockItem> FOOTPRINT_SLAB_ITEM = ITEMS.registerSimpleBlockItem(FOOTPRINT_SLAB);
+
+    // "Reposition Building" hand-off (2026-09-29) -- glows like the Rope Fence Post's own item, same
+    // "make it obviously special, no new art" convention, stacksTo(1) since it's bound to one box.
+    public static final DeferredItem<BuildingLocatorItem> BUILDING_LOCATOR_ITEM = ITEMS.register(
+            "building_locator",
+            id -> new BuildingLocatorItem(new Item.Properties()
+                    .stacksTo(1)
+                    .setId(ResourceKey.create(Registries.ITEM, id))
+                    .component(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)));
+
+    // "Reposition Supply Box" hand-off (2026-09-29) -- same glowing/stacksTo(1) convention as the
+    // Building Locator above.
+    public static final DeferredItem<SupplyBoxLocatorItem> SUPPLY_BOX_LOCATOR_ITEM = ITEMS.register(
+            "supply_box_locator",
+            id -> new SupplyBoxLocatorItem(new Item.Properties()
+                    .stacksTo(1)
+                    .setId(ResourceKey.create(Registries.ITEM, id))
+                    .component(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)));
 }

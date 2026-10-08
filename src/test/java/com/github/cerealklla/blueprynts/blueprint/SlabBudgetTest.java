@@ -22,9 +22,9 @@ class SlabBudgetTest {
 
     @Test
     void higherTierGrantsMoreThanLowerTierAtTheSameSize() {
-        int t0 = SlabBudget.compute(SizeClass.SMALL, TierSpec.T0, NEUTRAL);
+        int t1 = SlabBudget.compute(SizeClass.SMALL, TierSpec.T1, NEUTRAL);
         int t5 = SlabBudget.compute(SizeClass.SMALL, TierSpec.T5, NEUTRAL);
-        assertTrue(t5 > t0);
+        assertTrue(t5 > t1);
     }
 
     @Test
@@ -38,6 +38,6 @@ class SlabBudgetTest {
     @Test
     void neverReturnsZeroOrNegative() {
         BlueprintType tiny = new BlueprintType(Identifier.fromNamespaceAndPath("test", "tiny"), "Tiny", 0.0001);
-        assertTrue(SlabBudget.compute(SizeClass.SMALL, TierSpec.T0, tiny) >= 1);
+        assertTrue(SlabBudget.compute(SizeClass.SMALL, TierSpec.T1, tiny) >= 1);
     }
 }

@@ -42,7 +42,7 @@ import net.minecraft.world.phys.Vec3;
 public class ConstructionSiteBlockEntity extends BlockEntity {
 
     private SizeClass sizeClass = SizeClass.SMALL;
-    private int tier = 0;
+    private int tier = 1;
     private Identifier blueprintTypeId;
     private ConstructionSitePhase phase = ConstructionSitePhase.IDLE;
     private UUID activePlayer;
@@ -169,7 +169,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             return "Mark at least one column with a Footprint Slab first.";
         }
 
-        int groundY = getBlockPos().getY();
+        int groundY = SiteTerrainOps.siteFloorY(getBlockPos());
         for (Column column : markedColumns) {
             // Slabs are placed by right-clicking the leveled floor, so they stand ON it at
             // groundY + 1, not embedded in it at groundY -- looking at groundY was a real playtest
@@ -222,7 +222,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
      * player's inventory for free, undermining the whole point of it being a budget.
      */
     public void restoreAndReset(ServerLevel level) {
-        int groundY = getBlockPos().getY();
+        int groundY = SiteTerrainOps.siteFloorY(getBlockPos());
         for (Column column : markedColumns) {
             // Same groundY-vs-groundY+1 fix as beginConstruction -- see its own comment.
             BlockPos slabPos = new BlockPos(column.x(), groundY + 1, column.z());
@@ -263,7 +263,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
             return "Give the Blueprint a name first.";
         }
 
-        int groundY = getBlockPos().getY();
+        int groundY = SiteTerrainOps.siteFloorY(getBlockPos());
         TierSpec spec = TierSpec.fromOrdinal(tier);
         Direction intoSite = intoSite();
         List<Column> relativeColumns = new ArrayList<>();
@@ -277,15 +277,17 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
                 BlockPos worldPos = new BlockPos(column.x(), groundY + relY, column.z());
                 BlockState state = level.getBlockState(worldPos);
                 if (relY < 0 && state.equals(existingBlock)) {
-                    cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.empty()));
+                    cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.empty(), -1));
                 } else {
-                    cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.of(state)));
+                    cells.add(new BlueprintCell(relative.x(), relY, relative.z(), Optional.of(state), -1));
                 }
             }
         }
 
+        List<BlueprintCell> sequencedCells = com.github.cerealklla.blueprynts.blueprint.SequenceComputer.assign(cells);
+
         BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
-                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), cells, intoSite, sizeClass);
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), sequencedCells, intoSite, sizeClass);
         BlueprintStorage.get().save(record);
         return null;
     }
@@ -305,7 +307,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
 
         BlueprintRecord record = found.get();
         Direction intoSite = intoSite();
-        int groundY = getBlockPos().getY();
+        int groundY = SiteTerrainOps.siteFloorY(getBlockPos());
 
         // Re-orients each cell's own BlockState (a stair's facing, a sign's rotation, etc. -- all
         // captured as absolute compass directions) to match this loading site, the same way
@@ -365,7 +367,9 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
     protected void loadAdditional(ValueInput input) {
         super.loadAdditional(input);
         sizeClass = SizeClass.valueOf(input.getStringOr("SizeClass", SizeClass.SMALL.name()));
-        tier = input.getIntOr("Tier", 0);
+        // Tier is 1-based (T1-T5) since 2026-09-29's renumbering; clamp any pre-existing world
+        // data still holding the old 0-based Tier 0 rather than let TierSpec#fromOrdinal throw.
+        tier = Math.max(1, input.getIntOr("Tier", 1));
         blueprintTypeId = input.read("BlueprintTypeId", Identifier.CODEC).orElse(null);
         phase = ConstructionSitePhase.valueOf(input.getStringOr("Phase", ConstructionSitePhase.IDLE.name()));
         activePlayer = input.read("ActivePlayer", UUIDUtil.CODEC).orElse(null);

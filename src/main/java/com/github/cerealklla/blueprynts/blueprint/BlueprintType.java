@@ -16,6 +16,15 @@ import net.minecraft.resources.Identifier;
  *                  Size/Tier. All built-ins start at {@code 1.0}; the user was explicit they
  *                  haven't decided real per-type scaling yet and expect to tune it once testable --
  *                  this field exists so that tuning never requires a code change, just a new value.
+ * @param npcOwnedOnly true if a plot of this type can never have a player {@code owner} (design doc
+ *                     Section 14a's Guardhouse: "can only ever be NPC-owned, never player-owned,
+ *                     unlike other Plot Types"), bridged through to Settlemynts' own {@code
+ *                     ZoneType} by {@code bridge.SettlemyntsZoneBridge} so Settlemynts' Finalize
+ *                     flow -- the only place an owner is actually assigned -- can enforce it without
+ *                     hardcoding any one type's id. {@code false} for every other built-in.
  */
-public record BlueprintType(Identifier id, String label, double areaScale) {
+public record BlueprintType(Identifier id, String label, double areaScale, boolean npcOwnedOnly) {
+    public BlueprintType(Identifier id, String label, double areaScale) {
+        this(id, label, areaScale, false);
+    }
 }

@@ -47,3 +47,12 @@ save/load the result as a reusable Blueprint.
     reason="Deposits a Construction Site's refund pile into a Yconomics Loot Bag if present."
     ordering="AFTER"
     side="BOTH"
+
+# Optional soft dependency, added 2026-10-02 -- contributes this mod's own Construction Site debug
+# item into Kyt's mod-managed "Dev" Kyt if Kyt is present; the mod works standalone without it.
+[[dependencies.${mod_id}]]
+    modId="kyt"
+    type="optional"
+    reason="Contributes Blueprynts' Construction Site debug item into Kyt's mod-managed Dev Kyt."
+    ordering="AFTER"
+    side="BOTH"

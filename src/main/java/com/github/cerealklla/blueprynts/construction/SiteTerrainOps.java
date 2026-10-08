@@ -42,6 +42,17 @@ public final class SiteTerrainOps {
     private SiteTerrainOps() {
     }
 
+    /**
+     * The Y layer a Construction Site/Building Supply Box's own floor should sit at: one below the
+     * block itself, i.e. level with the real ground block it's physically resting on -- not the same
+     * Y the site/box block itself occupies. A real playtest bug, 2026-09-29: every clearing/paste
+     * layer used {@code sitePos.getY()} directly, leaving the whole construction zone (floor
+     * included) floating one block above where it visually should sit.
+     */
+    public static int siteFloorY(BlockPos sitePos) {
+        return sitePos.getY() - 1;
+    }
+
     /** The outer clearing rectangle behind a Construction Site, in absolute world space. */
     public record OuterArea(int minX, int maxX, int minZ, int maxZ, int groundY) {
         public boolean contains(int x, int z) {
@@ -78,7 +89,7 @@ public final class SiteTerrainOps {
                 maxZ = Math.max(maxZ, z);
             }
         }
-        return new OuterArea(minX, maxX, minZ, maxZ, sitePos.getY());
+        return new OuterArea(minX, maxX, minZ, maxZ, siteFloorY(sitePos));
     }
 
     /**
@@ -285,6 +296,6 @@ public final class SiteTerrainOps {
             maxZ = Math.max(maxZ, world.z());
         }
         int margin = 1 + LOAD_CLEARING_EXTRA_MARGIN;
-        return new OuterArea(minX - margin, maxX + margin, minZ - margin, maxZ + margin, sitePos.getY());
+        return new OuterArea(minX - margin, maxX + margin, minZ - margin, maxZ + margin, siteFloorY(sitePos));
     }
 }

@@ -1,6 +1,7 @@
 package com.github.cerealklla.blueprynts.registration;
 
 import com.github.cerealklla.blueprynts.BluepryntsMod;
+import com.github.cerealklla.blueprynts.construction.GhostBuildingPreviewEntity;
 import com.github.cerealklla.blueprynts.construction.GhostConstructionWallEntity;
 
 import net.minecraft.core.registries.Registries;
@@ -24,4 +25,10 @@ public final class ModEntities {
                     GhostConstructionWallEntity::new, MobCategory.MISC)
                     .sized(1.0F, 1.0F)
                     .build(ResourceKey.create(Registries.ENTITY_TYPE, Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "ghost_construction_wall"))));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<GhostBuildingPreviewEntity>> GHOST_BUILDING_PREVIEW =
+            ENTITY_TYPES.register("ghost_building_preview", () -> EntityType.Builder.<GhostBuildingPreviewEntity>of(
+                    GhostBuildingPreviewEntity::new, MobCategory.MISC)
+                    .sized(1.0F, 1.0F)
+                    .build(ResourceKey.create(Registries.ENTITY_TYPE, Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "ghost_building_preview"))));
 }

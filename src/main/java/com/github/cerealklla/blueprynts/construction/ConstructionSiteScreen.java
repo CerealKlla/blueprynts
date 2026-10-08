@@ -88,7 +88,8 @@ public class ConstructionSiteScreen extends Screen {
     }
 
     private void cycleTier() {
-        int next = (data.tier() + 1) % 6;
+        // Tier is 1-based (T1-T5, 2026-09-29) -- cycles 1->2->3->4->5->1.
+        int next = (data.tier() % 5) + 1;
         send(new SetConstructionSiteOptionsPayload(data.sitePos(), data.sizeClass(), next, data.blueprintTypeId()));
     }
 

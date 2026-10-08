@@ -23,17 +23,33 @@ public final class SettlemyntsZoneBridge {
 
     public static void registerBuiltins() {
         for (BlueprintType type : com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry.all()) {
-            Settlemynts.registerZoneType(new ZoneType(type.id(), type.label(), wallBlockFor(type)));
+            Settlemynts.registerZoneType(new ZoneType(type.id(), type.label(), wallBlockFor(type), type.npcOwnedOnly()));
         }
     }
 
+    // Colored glass, not wool -- matches Settlemynts' own built-in Zone Types (SettlemyntsMod, switched
+    // from wool to glass 2026-09-27), corrected here to match 2026-09-29 (this bridge was the one place
+    // never updated, and it's the one every Blueprynts-driven plot actually renders with).
     private static net.minecraft.world.level.block.Block wallBlockFor(BlueprintType type) {
         String path = type.id().getPath();
         return switch (path) {
-            case "farm" -> Blocks.LIME_WOOL;
-            case "lumberyard" -> Blocks.ORANGE_WOOL;
-            case "blacksmith" -> Blocks.GRAY_WOOL;
-            default -> Blocks.LIGHT_GRAY_WOOL;
+            case "farm" -> Blocks.LIME_STAINED_GLASS;
+            case "lumberyard" -> Blocks.ORANGE_STAINED_GLASS;
+            case "blacksmith" -> Blocks.GRAY_STAINED_GLASS;
+            case "guardhouse" -> Blocks.RED_STAINED_GLASS;
+            // Matches Settlemynts' own pre-existing native "private_residence" ZoneType's color --
+            // a separate registration under a different Identifier (settlemynts:private_residence
+            // vs. this one's blueprynts:private_residence), see this bridge's own class doc for why
+            // that's not a collision; kept visually consistent anyway so the two don't look unrelated.
+            case "private_residence" -> Blocks.LIGHT_BLUE_STAINED_GLASS;
+            // Four new vendor-style types, 2026-10-05.
+            case "grocer" -> Blocks.YELLOW_STAINED_GLASS;
+            case "armorer" -> Blocks.CYAN_STAINED_GLASS;
+            case "restaurant" -> Blocks.PINK_STAINED_GLASS;
+            case "building_supplier" -> Blocks.BROWN_STAINED_GLASS;
+            // Stonemason, 2026-10-05, same Shop-auto-seeding feature as the vendor types above.
+            case "stonemason" -> Blocks.WHITE_STAINED_GLASS;
+            default -> Blocks.LIGHT_GRAY_STAINED_GLASS;
         };
     }
 }

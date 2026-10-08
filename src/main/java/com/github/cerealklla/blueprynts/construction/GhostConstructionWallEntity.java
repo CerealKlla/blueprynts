@@ -76,9 +76,10 @@ public class GhostConstructionWallEntity extends Display.BlockDisplay {
         findByOwnerSite(level, ownerSitePos).forEach(wall -> wall.discard());
     }
 
+    /** {@code null} viewerId means "visible to everyone" (added 2026-09-29 for the Construction Box's own pending-build preview, which any player might be depositing resources for -- every existing caller already passes a real viewer, so this is purely additive). */
     @Override
     public boolean broadcastToPlayer(ServerPlayer player) {
-        return viewerId != null && viewerId.equals(player.getUUID());
+        return viewerId == null || viewerId.equals(player.getUUID());
     }
 
     @Override

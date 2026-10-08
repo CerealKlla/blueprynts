@@ -1,6 +1,7 @@
 package com.github.cerealklla.blueprynts.registration;
 
 import com.github.cerealklla.blueprynts.BluepryntsMod;
+import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlockEntity;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteBlockEntity;
 
 import net.minecraft.core.registries.Registries;
@@ -19,4 +20,8 @@ public final class ModBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ConstructionSiteBlockEntity>> CONSTRUCTION_SITE =
             BLOCK_ENTITIES.register("construction_site",
                     () -> new BlockEntityType<>(ConstructionSiteBlockEntity::new, ModBlocks.CONSTRUCTION_SITE.get()));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ConstructionBoxBlockEntity>> CONSTRUCTION_BOX =
+            BLOCK_ENTITIES.register("construction_box",
+                    () -> new BlockEntityType<>(ConstructionBoxBlockEntity::new, ModBlocks.CONSTRUCTION_BOX.get()));
 }

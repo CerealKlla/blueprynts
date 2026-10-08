@@ -121,12 +121,26 @@ dependencies {
     // least once before building this project, or this dependency won't resolve.
     compileOnly files("../Settlemynts/build/libs/settlemynts-${settlemynts_version}.jar")
 
+    // Kyt is an optional soft dependency (see neoforge.mods.toml), added 2026-10-02 -- contributes
+    // this mod's own Construction Site debug item into Kyt's mod-managed "Dev" Kyt via
+    // api.Kyt#registerDevKytContribution, gated behind ModList.get().isLoaded("kyt"). Same
+    // compileOnly-only shape as every other sibling dependency here.
+    compileOnly files("../Kyt/build/libs/kyt-${kyt_version}.jar")
+
     // Yconomics is an optional soft dependency (see neoforge.mods.toml) -- the refund pile deposits
     // into Yconomics' own Loot Bag entity when present (bag.LootBagListener#depositOrScatter, the
     // exact same clustering a voluntary/death drop goes through -- see bridge.YconomicsLootBridge),
     // falling back to a plain scattered ItemEntity when it's not. Same compileOnly-only shape as
     // Settlemynts above.
     compileOnly files("../Yconomics/build/libs/yconomics-${yconomics_version}.jar")
+
+    // NOTE: a Cartographyr compileOnly dependency was briefly added here, same day, for the Building
+    // Locator's plot-boundary fit checking (real Geometry.Polygon math). Removed the same day per the
+    // user's own correction -- "we can break that dependency by having Settlemynts give the
+    // Construction Box the full bounding box of where it's allowed to be placed when it first creates
+    // the Construction Box." See api.BuildableArea: a plain rectangle Settlemynts computes and hands
+    // over, so Blueprynts never needs to know Cartographyr's own geometry types at all. Blueprynts
+    // stays genuinely standalone-safe (no Cartographyr on its classpath required) again.
 
     // Deliberately no testCompileOnly/testRuntimeOnly on Settlemynts' or Yconomics' jars -- none of
     // these tests reference either, and including Settlemynts would pull its own mod metadata into

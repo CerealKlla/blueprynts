@@ -33,6 +33,17 @@ public final class ConstructionProtectionListener {
 
     @SubscribeEvent
     public void onPlace(BlockEvent.EntityPlaceEvent event) {
+        // A Building Supply Box relocation (see SupplyBoxLocatorItem) is a completely different
+        // mechanic from Construction Site authoring -- it has no business being blocked by an
+        // unrelated site's own build-volume restriction just because the placing player happens to
+        // have one CONSTRUCTING elsewhere. Real bug found live, 2026-09-29: this guard doesn't check
+        // proximity to the site at all, so ANY block placement anywhere in the world by a player with
+        // an active CONSTRUCTING site outside that site's own footprint was silently reverted a
+        // moment after being set -- exactly matching "it said repositioned, flashed for a frame, then
+        // vanished."
+        if (event.getState().getBlock() instanceof ConstructionBoxBlock) {
+            return;
+        }
         if (event.getEntity() instanceof Player player) {
             guard(player, event.getPos(), event);
         }

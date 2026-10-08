@@ -69,8 +69,17 @@ public final class BlueprintStorage {
     }
 
     public List<String> listNames() {
+        return listNames(record -> true);
+    }
+
+    /** Same as {@link #listNames()}, restricted to records matching {@code filter} -- e.g. a Building Supply Box's own zone/tier constraints. */
+    public List<String> listNames(java.util.function.Predicate<BlueprintRecord> filter) {
         List<String> names = new ArrayList<>();
-        forEachRecord((path, record) -> names.add(record.name()));
+        forEachRecord((path, record) -> {
+            if (filter.test(record)) {
+                names.add(record.name());
+            }
+        });
         return names;
     }
 
