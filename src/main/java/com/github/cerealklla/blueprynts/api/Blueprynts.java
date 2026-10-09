@@ -153,4 +153,46 @@ public final class Blueprynts {
         }
         return Optional.of(box.tier());
     }
+
+    /**
+     * Opens the Blueprint picker for this Building Supply Box's *next* Tier up, instead of waiting
+     * for the player to walk over and right-click it (added 2026-10-09 for Settlemynts' Plot Manager
+     * "Upgrade Plot" button -- "same options as upgrading structures"). Same eligibility re-checked
+     * server-side by {@code BluepryntsMod}'s {@code SelectConstructionBoxBlueprintPayload} handler
+     * once a Blueprint is actually picked -- this method's own checks exist purely to give the player
+     * an immediate, specific reason the button didn't do anything, rather than a silent no-op.
+     *
+     * @return {@code true} if the picker was actually sent; {@code false} (with a chat message
+     *         already sent to {@code player}) if this box isn't currently eligible to upgrade.
+     */
+    public static boolean requestUpgradePicker(ServerLevel level, BlockPos boxPos, net.minecraft.server.level.ServerPlayer player) {
+        if (!(level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box)) {
+            return false;
+        }
+        if (box.placedBlueprintName() == null || !box.everCompleted() || !box.blueprintPlaced() || box.repositionPending()) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "This plot isn't ready to be upgraded right now -- make sure its current Tier has finished building."));
+            return false;
+        }
+        int nextTier = box.tier() + 1;
+        if (nextTier > 5) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("This plot is already at the maximum Tier."));
+            return false;
+        }
+        // Same settlemynts:private_residence -> blueprynts:private_residence alias fix as
+        // ConstructionBoxBlock#useWithoutItem -- see that method's own doc for why.
+        Identifier matchZoneTypeId = box.zoneTypeId();
+        if (matchZoneTypeId != null && matchZoneTypeId.equals(Identifier.fromNamespaceAndPath("settlemynts", "private_residence"))) {
+            matchZoneTypeId = Identifier.fromNamespaceAndPath(com.github.cerealklla.blueprynts.BluepryntsMod.MODID, "private_residence");
+        }
+        final Identifier zoneTypeId = matchZoneTypeId;
+        com.github.cerealklla.blueprynts.blueprint.BlueprintStorage storage = com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get();
+        java.util.List<String> names = storage.listNames(record ->
+                record.blueprintTypeId().equals(zoneTypeId) && record.tier() == nextTier);
+        java.util.List<Long> fullMtimes = names.stream().map(name -> storage.previewAvailability(name).fullMtime()).toList();
+        java.util.List<Long> smallMtimes = names.stream().map(name -> storage.previewAvailability(name).smallMtime()).toList();
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                new com.github.cerealklla.blueprynts.construction.OpenConstructionBoxPickerPayload(boxPos, names, fullMtimes, smallMtimes, true));
+        return true;
+    }
 }

@@ -10,8 +10,12 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-/** Client-to-server: a Blueprint was picked on {@code client.ConstructionBoxPickerScreen}. */
-public record SelectConstructionBoxBlueprintPayload(BlockPos boxPos, String name) implements CustomPacketPayload {
+/**
+ * Client-to-server: a Blueprint was picked on {@code client.ConstructionBoxPickerScreen}. {@code
+ * upgrade} (added 2026-10-09) threaded straight through from {@link
+ * OpenConstructionBoxPickerPayload#upgrade()} -- see that record's own doc.
+ */
+public record SelectConstructionBoxBlueprintPayload(BlockPos boxPos, String name, boolean upgrade) implements CustomPacketPayload {
 
     public static final Type<SelectConstructionBoxBlueprintPayload> TYPE =
             new Type<>(Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "select_construction_box_blueprint"));
@@ -19,6 +23,7 @@ public record SelectConstructionBoxBlueprintPayload(BlockPos boxPos, String name
     public static final StreamCodec<ByteBuf, SelectConstructionBoxBlueprintPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.fromCodec(BlockPos.CODEC), SelectConstructionBoxBlueprintPayload::boxPos,
             ByteBufCodecs.STRING_UTF8, SelectConstructionBoxBlueprintPayload::name,
+            ByteBufCodecs.BOOL, SelectConstructionBoxBlueprintPayload::upgrade,
             SelectConstructionBoxBlueprintPayload::new);
 
     @Override

@@ -48,7 +48,7 @@ public class ConstructionBoxPickerScreen extends Screen {
     private Button selectButton;
 
     public ConstructionBoxPickerScreen(OpenConstructionBoxPickerPayload data) {
-        super(Component.literal("Select Blueprint"));
+        super(Component.literal(data.upgrade() ? "Select Upgrade Blueprint" : "Select Blueprint"));
         this.data = data;
     }
 
@@ -110,7 +110,7 @@ public class ConstructionBoxPickerScreen extends Screen {
         if (data.names().isEmpty()) {
             return;
         }
-        send(new SelectConstructionBoxBlueprintPayload(data.boxPos(), data.names().get(index)));
+        send(new SelectConstructionBoxBlueprintPayload(data.boxPos(), data.names().get(index), data.upgrade()));
         onClose();
     }
 

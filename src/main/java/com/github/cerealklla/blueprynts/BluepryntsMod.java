@@ -168,6 +168,44 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
+                    // Upgrade branch (added 2026-10-09, Settlemynts' Plot Manager "Upgrade Plot"
+                    // button/"same options as upgrading structures") -- a genuinely different
+                    // operation from a fresh bind below: the box already has a completed Tier
+                    // standing, and this tears it down (keeping the same anchor/position, no Locator
+                    // involved) to rebuild at the next Tier up instead. Re-validated server-side
+                    // rather than trusting the client's own eligibility check (same precedent as every
+                    // other payload handler in this class).
+                    if (payload.upgrade()) {
+                        if (box.placedBlueprintName() == null || !box.everCompleted() || !box.blueprintPlaced() || box.repositionPending()) {
+                            player.sendSystemMessage(Component.literal("This plot isn't ready to be upgraded right now."));
+                            return;
+                        }
+                        var found = BlueprintStorage.get().load(payload.name());
+                        if (found.isEmpty()) {
+                            player.sendSystemMessage(Component.literal("No Blueprint named '" + payload.name() + "'."));
+                            return;
+                        }
+                        int nextTier = found.get().tier();
+                        if (nextTier != box.tier() + 1) {
+                            player.sendSystemMessage(Component.literal("That Blueprint isn't the next Tier up for this plot."));
+                            return;
+                        }
+                        com.github.cerealklla.blueprynts.construction.FundingRequirements requirements =
+                                ModList.get().isLoaded("settlemynts") && box.zoneTypeId() != null
+                                        ? com.github.cerealklla.blueprynts.bridge.SettlemyntsConstructionConfigBridge.getRequirements(box.zoneTypeId(), nextTier)
+                                        : com.github.cerealklla.blueprynts.construction.FundingRequirements.NONE;
+                        box = box.clearPartialConstruction(level);
+                        box.setBlueprintPlaced(false);
+                        box.setPlacedBlueprintName(payload.name());
+                        box.setTier(nextTier);
+                        box.initializeRequirements(requirements);
+                        box.attemptCompletion(level);
+                        player.sendSystemMessage(Component.literal(box.blueprintPlaced()
+                                ? "Upgraded to Tier " + nextTier + "!"
+                                : "Upgrading to Tier " + nextTier + " -- deposit the required resources to continue construction."));
+                        player.openMenu(box);
+                        return;
+                    }
                     if (box.blueprintPlaced() || box.placedBlueprintName() != null) {
                         return;
                     }

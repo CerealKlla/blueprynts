@@ -88,7 +88,12 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
         // opens the real Supplied/Needed Container/MenuProvider screen instead of the old plain-
         // payload Manage screen (2026-09-29's "Passive Construction & Funding" pass replaced
         // OpenConstructionBoxManagePayload/ConstructionBoxManageScreen with this).
-        if (box.placedBlueprintName() != null && (box.blueprintPlaced() || !box.everCompleted())) {
+        // Widened 2026-10-09 to also cover "mid-upgrade-funding" (torn down for a Tier upgrade,
+        // funding a new Tier, no Locator involved at all -- see SelectConstructionBoxBlueprintPayload's
+        // upgrade branch) via isFundable(), which already correctly excludes the real
+        // mid-Reposition-Locator-pending case (repositionPending) that the old two-case check here
+        // used to lean on `everCompleted` alone to rule out.
+        if (box.placedBlueprintName() != null && (box.blueprintPlaced() || !box.everCompleted() || box.isFundable())) {
             serverPlayer.openMenu(box);
             return InteractionResult.SUCCESS_SERVER;
         }
@@ -123,7 +128,7 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
                 record.blueprintTypeId().equals(matchZoneTypeId) && record.tier() == 1);
         java.util.List<Long> fullMtimes = names.stream().map(name -> storage.previewAvailability(name).fullMtime()).toList();
         java.util.List<Long> smallMtimes = names.stream().map(name -> storage.previewAvailability(name).smallMtime()).toList();
-        PacketDistributor.sendToPlayer(serverPlayer, new OpenConstructionBoxPickerPayload(pos, names, fullMtimes, smallMtimes));
+        PacketDistributor.sendToPlayer(serverPlayer, new OpenConstructionBoxPickerPayload(pos, names, fullMtimes, smallMtimes, false));
         return InteractionResult.SUCCESS_SERVER;
     }
 }
