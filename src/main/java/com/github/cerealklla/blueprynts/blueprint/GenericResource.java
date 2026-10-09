@@ -14,11 +14,18 @@ import net.minecraft.world.item.Items;
  * this is easy to open up later if that changes.
  *
  * <p>Each constant names a {@link TagKey} deciding which real items count toward it (so any wood log
- * satisfies "Wood," not one specific species) and a single representative {@link Item} for the
+ * satisfies "Logs," not one specific species) and a single representative {@link Item} for the
  * Construction Box screen's row icon.
+ *
+ * <p><b>{@code WOOD}'s tag was narrowed to logs only, 2026-10-09</b> -- real report: "Currently Plot
+ * shows 'wood', this should say 'any logs' or 'any planks', but they are not the same thing, so
+ * shouldn't be interchangeable" (one log yields 4 planks, so letting either satisfy the same amount
+ * at 1:1 silently misprices the cost). {@code generic_wood} now matches only {@code #minecraft:logs}
+ * -- the enum constant/tag id keep their original names to avoid a wider rename, but the label is
+ * "Logs," not "Wood."
  */
 public enum GenericResource {
-    WOOD("Wood", tag("generic_wood"), Items.OAK_LOG),
+    WOOD("Logs", tag("generic_wood"), Items.OAK_LOG),
     STONE("Stone", tag("generic_stone"), Items.COBBLESTONE);
 
     private final String label;
