@@ -139,6 +139,12 @@ public class BluepryntsMod {
         // Stonemason (2026-10-05, explicit user request, same shop-auto-seeding feature as the Shop
         // Seed Catalogs below) -- same plain shape as the four vendor types above.
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "stonemason"), "Stonemason", 1.0));
+        // Two new stubbed-out types, 2026-10-09 explicit request -- real future features (buying
+        // location-knowledge info, hiring guards, trade routes) are NOT built yet, just registration
+        // so the Construction Box/Plot Type picker has a real entry to bind a hand-authored Blueprint
+        // to once one exists; no Shop Seed Catalog either (nothing real to sell yet).
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "tavern"), "Tavern", 1.0));
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "traveling_merchant_stall"), "Traveling Merchant Stall", 1.0));
 
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.

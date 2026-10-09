@@ -49,6 +49,9 @@ public final class SettlemyntsZoneBridge {
             case "building_supplier" -> Blocks.BROWN_STAINED_GLASS;
             // Stonemason, 2026-10-05, same Shop-auto-seeding feature as the vendor types above.
             case "stonemason" -> Blocks.WHITE_STAINED_GLASS;
+            // Two new stubbed-out types, 2026-10-09.
+            case "tavern" -> Blocks.PURPLE_STAINED_GLASS;
+            case "traveling_merchant_stall" -> Blocks.MAGENTA_STAINED_GLASS;
             default -> Blocks.LIGHT_GRAY_STAINED_GLASS;
         };
     }

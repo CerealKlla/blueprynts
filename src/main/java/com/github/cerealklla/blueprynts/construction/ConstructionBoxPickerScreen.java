@@ -40,46 +40,66 @@ public class ConstructionBoxPickerScreen extends Screen {
 
     private static final int PREVIEW_BOX_WIDTH = 200;
     private static final int PREVIEW_BOX_HEIGHT = 150;
+    private static final int MIN_PREVIEW_BOX_HEIGHT = 60;
+    private static final int TOP_MARGIN = 60;
+    private static final int BOTTOM_MARGIN = 10;
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int BUTTON_GAP = 4;
+    // 4 buttons (quality/select/reposition/cancel), each BUTTON_HEIGHT tall with BUTTON_GAP between.
+    private static final int BUTTONS_BLOCK_HEIGHT = BUTTON_HEIGHT * 4 + BUTTON_GAP * 3;
 
     private final OpenConstructionBoxPickerPayload data;
     private int index;
     private String lastRequestedKey;
     private Button qualityButton;
     private Button selectButton;
+    // Computed in init() -- see its own doc for why this shrinks instead of staying a fixed constant.
+    private int previewBoxHeight = PREVIEW_BOX_HEIGHT;
 
     public ConstructionBoxPickerScreen(OpenConstructionBoxPickerPayload data) {
         super(Component.literal("Select Blueprint"));
         this.data = data;
     }
 
+    /**
+     * Laid out bottom-up as of 2026-10-09 (real report, screenshotted at two different window sizes:
+     * "Reposition Supply Box" and "Cancel" were missing entirely off the bottom of the screen at a
+     * smaller resolution/GUI scale) -- the old version used fixed pixel offsets that assumed enough
+     * window height for a full-size preview box AND all 4 buttons below it, with no fallback. The
+     * 4-button block is now always anchored {@link #BOTTOM_MARGIN} above the bottom of the screen
+     * (guaranteeing every button is always visible), and the preview box shrinks (down to {@link
+     * #MIN_PREVIEW_BOX_HEIGHT}) to fill whatever space is actually left above it.
+     */
     @Override
     protected void init() {
         boolean hasEntries = !data.names().isEmpty();
         int centerX = width / 2;
-        int previewTop = 60;
+        int previewTop = TOP_MARGIN;
+
+        int buttonsTop = Math.max(previewTop + MIN_PREVIEW_BOX_HEIGHT + 12, height - BOTTOM_MARGIN - BUTTONS_BLOCK_HEIGHT);
+        previewBoxHeight = Math.max(MIN_PREVIEW_BOX_HEIGHT, Math.min(PREVIEW_BOX_HEIGHT, buttonsTop - previewTop - 12));
 
         addRenderableWidget(Button.builder(Component.literal("<"), b -> page(-1))
-                .bounds(centerX - PREVIEW_BOX_WIDTH / 2 - 24, previewTop + PREVIEW_BOX_HEIGHT / 2 - 10, 20, 20).build())
+                .bounds(centerX - PREVIEW_BOX_WIDTH / 2 - 24, previewTop + previewBoxHeight / 2 - 10, 20, 20).build())
                 .active = hasEntries;
         addRenderableWidget(Button.builder(Component.literal(">"), b -> page(1))
-                .bounds(centerX + PREVIEW_BOX_WIDTH / 2 + 4, previewTop + PREVIEW_BOX_HEIGHT / 2 - 10, 20, 20).build())
+                .bounds(centerX + PREVIEW_BOX_WIDTH / 2 + 4, previewTop + previewBoxHeight / 2 - 10, 20, 20).build())
                 .active = hasEntries;
 
-        int belowPreview = previewTop + PREVIEW_BOX_HEIGHT + 12;
         qualityButton = addRenderableWidget(Button.builder(qualityLabel(), b -> cycleQuality())
-                .bounds(centerX - 100, belowPreview, 200, 20).build());
+                .bounds(centerX - 100, buttonsTop, 200, BUTTON_HEIGHT).build());
         selectButton = addRenderableWidget(Button.builder(Component.literal("Select This Blueprint"), b -> select())
-                .bounds(centerX - 100, belowPreview + 24, 200, 20).build());
+                .bounds(centerX - 100, buttonsTop + (BUTTON_HEIGHT + BUTTON_GAP), 200, BUTTON_HEIGHT).build());
         selectButton.active = hasEntries;
 
         // "Same ability to reposition the Building Supply Box too" -- user request, 2026-09-29.
         // Reachable here too (not just from ConstructionBoxManageScreen) since a box that hasn't had
         // a Blueprint picked yet still opens this screen directly on right-click.
         addRenderableWidget(Button.builder(Component.literal("Reposition Supply Box"), b -> repositionBox())
-                .bounds(centerX - 100, belowPreview + 48, 200, 20).build());
+                .bounds(centerX - 100, buttonsTop + (BUTTON_HEIGHT + BUTTON_GAP) * 2, 200, BUTTON_HEIGHT).build());
 
         addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
-                .bounds(centerX - 50, belowPreview + 76, 100, 20).build());
+                .bounds(centerX - 50, buttonsTop + (BUTTON_HEIGHT + BUTTON_GAP) * 3, 100, BUTTON_HEIGHT).build());
     }
 
     private void repositionBox() {
@@ -125,12 +145,12 @@ public class ConstructionBoxPickerScreen extends Screen {
         graphics.text(font, title, width / 2 - titleWidth / 2, 15, 0xFFFFFFFF);
 
         int centerX = width / 2;
-        int previewTop = 60;
+        int previewTop = TOP_MARGIN;
         int boxX = centerX - PREVIEW_BOX_WIDTH / 2;
 
         if (data.names().isEmpty()) {
             String empty = "No saved Blueprints yet.";
-            graphics.text(font, empty, centerX - font.width(empty) / 2, previewTop + PREVIEW_BOX_HEIGHT / 2, 0xFFAAAAAA);
+            graphics.text(font, empty, centerX - font.width(empty) / 2, previewTop + previewBoxHeight / 2, 0xFFAAAAAA);
             return;
         }
 
@@ -139,7 +159,7 @@ public class ConstructionBoxPickerScreen extends Screen {
         graphics.text(font, name, centerX - font.width(name) / 2, previewTop - 22, 0xFFFFFFFF);
         graphics.text(font, position, centerX - font.width(position) / 2, previewTop - 10, 0xFFAAAAAA);
 
-        graphics.fill(boxX, previewTop, boxX + PREVIEW_BOX_WIDTH, previewTop + PREVIEW_BOX_HEIGHT, 0xFF202020);
+        graphics.fill(boxX, previewTop, boxX + PREVIEW_BOX_WIDTH, previewTop + previewBoxHeight, 0xFF202020);
         renderPreview(graphics, boxX, previewTop);
     }
 
@@ -171,7 +191,7 @@ public class ConstructionBoxPickerScreen extends Screen {
         int imageWidth = full ? FULL_IMAGE_WIDTH : SMALL_IMAGE_WIDTH;
         int imageHeight = full ? FULL_IMAGE_HEIGHT : SMALL_IMAGE_HEIGHT;
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture.get(), boxX, boxY, 0f, 0f,
-                PREVIEW_BOX_WIDTH, PREVIEW_BOX_HEIGHT, imageWidth, imageHeight, imageWidth, imageHeight);
+                PREVIEW_BOX_WIDTH, previewBoxHeight, imageWidth, imageHeight, imageWidth, imageHeight);
     }
 
     @Override
