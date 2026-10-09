@@ -1,6 +1,7 @@
 package com.github.cerealklla.blueprynts.blueprint;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.mojang.serialization.Codec;
@@ -43,6 +44,14 @@ import net.minecraft.resources.Identifier;
  * SiteTerrainOps.computeOuterAreaForFootprint} (the old, footprint-bounding-box behavior) in that
  * case, since there's no way to recover an old file's original plot size, and a bounding box is
  * guaranteed to at least cover the real content even if it doesn't reproduce the original margin.
+ *
+ * <p>{@link #resources()} (added 2026-10-09) is a derived summary of every real, attainable item
+ * this Blueprint's cells contain -- see {@link BlueprintResources}'s own doc for exactly what counts
+ * and what's excluded. Never hand-entered; always {@link BlueprintResources#computeFrom(List)} at
+ * Save time. Empty map for files saved before this field existed, same backward-compatible-default
+ * treatment as every other field added after v1. Not consumed by anything yet -- explicitly future
+ * work ("will, in the future, be used... as a cost for creating and repairing the building,
+ * currently free").
  */
 public record BlueprintRecord(
         int templateVersion,
@@ -57,7 +66,8 @@ public record BlueprintRecord(
         int depth,
         List<BlueprintCell> cells,
         Direction facing,
-        SizeClass sizeClass) {
+        SizeClass sizeClass,
+        Map<Identifier, Integer> resources) {
 
     /**
      * Bump this whenever a change to this record's own JSON shape would otherwise break reading
@@ -82,20 +92,21 @@ public record BlueprintRecord(
             BlueprintCell.CODEC.listOf().fieldOf("cells").forGetter(BlueprintRecord::cells),
             Direction.CODEC.optionalFieldOf("facing").forGetter(r -> Optional.ofNullable(r.facing())),
             Codec.STRING.xmap(SizeClass::valueOf, SizeClass::name).optionalFieldOf("size_class")
-                    .forGetter(r -> Optional.ofNullable(r.sizeClass()))
-    ).apply(i, (templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass) ->
+                    .forGetter(r -> Optional.ofNullable(r.sizeClass())),
+            Codec.unboundedMap(Identifier.CODEC, Codec.INT).optionalFieldOf("resources", Map.of()).forGetter(BlueprintRecord::resources)
+    ).apply(i, (templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass, resources) ->
             new BlueprintRecord(templateVersion, name, author, status, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells,
-                    facing.orElse(null), sizeClass.orElse(null))));
+                    facing.orElse(null), sizeClass.orElse(null), resources)));
 
     /** Same record with a different {@link #status()} -- used when a Blueprint is moved between review folders. */
     public BlueprintRecord withStatus(BlueprintStatus newStatus) {
-        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass);
+        return new BlueprintRecord(templateVersion, name, author, newStatus, reviews, blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass, resources);
     }
 
     /** Same record with one more vote appended to the permanent review history -- never replaces or removes a prior vote. */
     public BlueprintRecord withAddedReview(BlueprintReview review) {
         List<BlueprintReview> updated = new java.util.ArrayList<>(reviews);
         updated.add(review);
-        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass);
+        return new BlueprintRecord(templateVersion, name, author, status, List.copyOf(updated), blueprintTypeId, tier, relativeColumns, height, depth, cells, facing, sizeClass, resources);
     }
 }

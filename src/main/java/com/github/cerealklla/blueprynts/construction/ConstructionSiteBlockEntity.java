@@ -287,7 +287,8 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         List<BlueprintCell> sequencedCells = com.github.cerealklla.blueprynts.blueprint.SequenceComputer.assign(cells);
 
         BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
-                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), sequencedCells, intoSite, sizeClass);
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), sequencedCells, intoSite, sizeClass,
+                com.github.cerealklla.blueprynts.blueprint.BlueprintResources.computeFrom(sequencedCells));
         BlueprintStorage.get().save(record);
         return null;
     }

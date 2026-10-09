@@ -73,7 +73,8 @@ public final class DebugCommands {
         List<BlueprintCell> sequenced = SequenceComputer.assign(record.cells());
         BlueprintRecord updated = new BlueprintRecord(record.templateVersion(), record.name(), record.author(), record.status(),
                 record.reviews(), record.blueprintTypeId(), record.tier(), record.relativeColumns(), record.height(), record.depth(),
-                sequenced, record.facing(), record.sizeClass());
+                sequenced, record.facing(), record.sizeClass(),
+                com.github.cerealklla.blueprynts.blueprint.BlueprintResources.computeFrom(sequenced));
         BlueprintStorage.get().save(updated);
     }
 }
