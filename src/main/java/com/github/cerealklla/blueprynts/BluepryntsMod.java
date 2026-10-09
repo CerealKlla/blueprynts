@@ -13,6 +13,7 @@ import com.github.cerealklla.blueprynts.construction.BeginDesignPayload;
 import com.github.cerealklla.blueprynts.construction.BlueprintPreviewImagePayload;
 import com.github.cerealklla.blueprynts.construction.Column;
 import com.github.cerealklla.blueprynts.construction.ClientConstructionRequests;
+import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlock;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlockEntity;
 import com.github.cerealklla.blueprynts.construction.ConstructionProtectionListener;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteBlock;
@@ -161,6 +162,34 @@ public class BluepryntsMod {
                 (payload, context) -> ClientConstructionRequests.requestStorePreviewImage(payload));
         registrar.playToClient(OpenConstructionBoxPickerPayload.TYPE, OpenConstructionBoxPickerPayload.STREAM_CODEC,
                 (payload, context) -> ClientConstructionRequests.requestConstructionBoxPickerScreen(payload));
+        registrar.playToClient(com.github.cerealklla.blueprynts.construction.OpenConstructionBoxTierPickerPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.OpenConstructionBoxTierPickerPayload.STREAM_CODEC,
+                (payload, context) -> ClientConstructionRequests.requestConstructionBoxTierPickerScreen(payload));
+
+        registrar.playToServer(com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)
+                            || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
+                        return;
+                    }
+                    ConstructionBoxBlock.openTierPicker(player, payload.boxPos(), box.allowedTier());
+                });
+
+        registrar.playToServer(com.github.cerealklla.blueprynts.construction.SelectConstructionBoxTierPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.SelectConstructionBoxTierPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)
+                            || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
+                        return;
+                    }
+                    if (payload.tier() < 1 || payload.tier() > box.allowedTier()) {
+                        player.sendSystemMessage(Component.literal("That Tier isn't unlocked for this plot yet."));
+                        return;
+                    }
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                            ConstructionBoxBlock.buildBlueprintPicker(payload.boxPos(), box.zoneTypeId(), payload.tier()));
+                });
 
         registrar.playToServer(SelectConstructionBoxBlueprintPayload.TYPE, SelectConstructionBoxBlueprintPayload.STREAM_CODEC,
                 (payload, context) -> {
@@ -168,61 +197,30 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
-                    // Upgrade branch (added 2026-10-09, Settlemynts' Plot Manager "Upgrade Plot"
-                    // button/"same options as upgrading structures") -- a genuinely different
-                    // operation from a fresh bind below: the box already has a completed Tier
-                    // standing, and this tears it down (keeping the same anchor/position, no Locator
-                    // involved) to rebuild at the next Tier up instead. Re-validated server-side
-                    // rather than trusting the client's own eligibility check (same precedent as every
-                    // other payload handler in this class).
-                    if (payload.upgrade()) {
-                        if (box.placedBlueprintName() == null || !box.everCompleted() || !box.blueprintPlaced() || box.repositionPending()) {
-                            player.sendSystemMessage(Component.literal("This plot isn't ready to be upgraded right now."));
-                            return;
-                        }
-                        var found = BlueprintStorage.get().load(payload.name());
-                        if (found.isEmpty()) {
-                            player.sendSystemMessage(Component.literal("No Blueprint named '" + payload.name() + "'."));
-                            return;
-                        }
-                        int nextTier = found.get().tier();
-                        if (nextTier != box.tier() + 1) {
-                            player.sendSystemMessage(Component.literal("That Blueprint isn't the next Tier up for this plot."));
-                            return;
-                        }
-                        com.github.cerealklla.blueprynts.construction.FundingRequirements requirements =
-                                ModList.get().isLoaded("settlemynts") && box.zoneTypeId() != null
-                                        ? com.github.cerealklla.blueprynts.bridge.SettlemyntsConstructionConfigBridge.getRequirements(box.zoneTypeId(), nextTier)
-                                        : com.github.cerealklla.blueprynts.construction.FundingRequirements.NONE;
-                        box = box.clearPartialConstruction(level);
-                        box.setBlueprintPlaced(false);
-                        box.setPlacedBlueprintName(payload.name());
-                        box.setTier(nextTier);
-                        box.initializeRequirements(requirements);
-                        box.attemptCompletion(level);
-                        player.sendSystemMessage(Component.literal(box.blueprintPlaced()
-                                ? "Upgraded to Tier " + nextTier + "!"
-                                : "Upgrading to Tier " + nextTier + " -- deposit the required resources to continue construction."));
-                        player.openMenu(box);
+                    if (box.repositionPending()) {
+                        player.sendSystemMessage(Component.literal("Finish the current Reposition first."));
                         return;
                     }
-                    if (box.blueprintPlaced() || box.placedBlueprintName() != null) {
-                        return;
-                    }
-                    // Binds the box to this Blueprint and opens its funding screen -- it no longer
-                    // pastes immediately (2026-09-29's "Passive Construction & Funding" pass). The
-                    // structure only actually appears once every required resource is deposited (see
-                    // ConstructionBoxBlockEntity#attemptCompletion), via RealBlueprintPlacement at
-                    // 100% -- same underlying paste mechanism, just gated on funding now instead of
-                    // firing the instant a Blueprint is picked. A box with no configured cost (no
-                    // Settlemynts, or nothing set for this Zone Type + Tier) builds immediately anyway,
-                    // since attemptCompletion() is called right away below.
                     var found = BlueprintStorage.get().load(payload.name());
                     if (found.isEmpty()) {
                         player.sendSystemMessage(Component.literal("No Blueprint named '" + payload.name() + "'."));
                         return;
                     }
                     int tier = found.get().tier();
+                    if (tier > box.allowedTier()) {
+                        player.sendSystemMessage(Component.literal("That Tier isn't unlocked for this plot yet."));
+                        return;
+                    }
+                    // Unified bind/rebind (2026-10-09, replacing the old "already bound = silent
+                    // no-op" guard, which meant there was never actually any way to pick a different
+                    // Blueprint once one was bound at all) -- tearing down any existing structure
+                    // first is a harmless no-op if nothing's built yet (clearPartialConstruction's own
+                    // doc: empty removalSnapshot = nothing to restore), so this same path correctly
+                    // covers a brand-new box, a mid-funding box, and an already-built box the player
+                    // is deliberately changing via "Change Blueprint," all without special-casing.
+                    boolean hadPriorBlueprint = box.placedBlueprintName() != null;
+                    box = box.clearPartialConstruction(level);
+                    box.setBlueprintPlaced(false);
                     com.github.cerealklla.blueprynts.construction.FundingRequirements requirements =
                             ModList.get().isLoaded("settlemynts") && box.zoneTypeId() != null
                                     ? com.github.cerealklla.blueprynts.bridge.SettlemyntsConstructionConfigBridge.getRequirements(box.zoneTypeId(), tier)
@@ -233,7 +231,8 @@ public class BluepryntsMod {
                     box.attemptCompletion(level);
                     player.sendSystemMessage(Component.literal(box.blueprintPlaced()
                             ? "Blueprint \"" + payload.name() + "\" placed."
-                            : "Blueprint \"" + payload.name() + "\" bound -- deposit the required resources to begin construction."));
+                            : (hadPriorBlueprint ? "Now building \"" : "Blueprint \"") + payload.name()
+                                    + "\" -- deposit the required resources to begin construction."));
                     player.openMenu(box);
                 });
 

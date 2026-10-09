@@ -55,7 +55,9 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // Must match ConstructionBoxScreen's own layout constants exactly (funding-slot y, and the
     // player-inventory y both mods' text/background positioning is built around).
     private static final int FUNDING_SLOT_Y = 18;
-    private static final int PLAYER_INV_Y = 132;
+    // Bumped 132 -> 156 (2026-10-09) to make room for the new third "Change Blueprint" button on
+    // client.ConstructionBoxScreen -- must match that class's own copy of this constant exactly.
+    private static final int PLAYER_INV_Y = 156;
 
     private void layoutSlots(Inventory inventory) {
         GenericResource[] resources = GenericResource.values();

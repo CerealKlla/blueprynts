@@ -2,6 +2,7 @@ package com.github.cerealklla.blueprynts;
 
 import com.github.cerealklla.blueprynts.construction.ClientConstructionRequests;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxPickerScreen;
+import com.github.cerealklla.blueprynts.construction.ConstructionBoxTierPickerScreen;
 import com.github.cerealklla.blueprynts.construction.ConstructionSiteScreen;
 import com.github.cerealklla.blueprynts.construction.GhostConstructionWallRenderer;
 import com.github.cerealklla.blueprynts.construction.SlabRemoveScreen;
@@ -59,6 +60,8 @@ public class BluepryntsModClient {
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new SlabRemoveScreen(request)));
         ClientConstructionRequests.takePendingConstructionBoxPickerScreen()
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new ConstructionBoxPickerScreen(request)));
+        ClientConstructionRequests.takePendingConstructionBoxTierPickerScreen()
+                .ifPresent(request -> Minecraft.getInstance().setScreen(new ConstructionBoxTierPickerScreen(request)));
         for (var image : ClientConstructionRequests.takePendingPreviewImages()) {
             ClientBlueprintPreviewCache.store(image.name(), image.variant(), image.mtime(), image.pngBytes());
         }

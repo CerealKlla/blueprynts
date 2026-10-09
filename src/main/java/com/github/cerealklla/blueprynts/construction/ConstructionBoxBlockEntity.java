@@ -143,6 +143,13 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     // caps scale by Tier) -- same "accepted but discarded until a real consumer needed it" gap
     // maxTimeTicks itself used to have. 0 means unbound/unknown.
     private int tier;
+    // The highest Blueprint Tier this box is currently ALLOWED to build at -- added 2026-10-09,
+    // genuinely independent of `tier` above (which Blueprint is actually bound/built right now).
+    // Pushed in from Settlemynts' `construction.PlotTierUpgradeFunding` ("Upgrade Plot") via {@code
+    // api.Blueprynts#setConstructionBoxAllowedTier}, never raised by this mod on its own. Defaults
+    // to 1 (every plot starts at Tier 1) -- see `zone.PlotRecord#tier`'s own class doc on the
+    // Settlemynts side for the full split between "unlocked Tier cap" and "built Tier."
+    private int allowedTier = 1;
     // Not persisted -- purely an optimization so the ticker's once-a-second re-check doesn't
     // re-run RealBlueprintPlacement when nothing has actually changed; worst case after a
     // reload it just redundantly re-pastes the same already-correct cells once, harmless.
@@ -326,6 +333,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         this.minTimeTicks = source.minTimeTicks;
         this.maxTimeTicks = source.maxTimeTicks;
         this.tier = source.tier;
+        this.allowedTier = source.allowedTier;
         this.accumulatedTimeTicks = source.accumulatedTimeTicks;
         this.lastBuiltPercent = source.lastBuiltPercent;
         setChanged();
@@ -341,6 +349,15 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     public void setTier(int tier) {
         this.tier = tier;
+        setChanged();
+    }
+
+    public int allowedTier() {
+        return allowedTier;
+    }
+
+    public void setAllowedTier(int allowedTier) {
+        this.allowedTier = allowedTier;
         setChanged();
     }
 
@@ -521,6 +538,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         minTimeTicks = input.getIntOr("MinTimeTicks", 0);
         maxTimeTicks = input.getIntOr("MaxTimeTicks", 0);
         tier = input.getIntOr("Tier", 0);
+        allowedTier = input.getIntOr("AllowedTier", 1);
         accumulatedTimeTicks = input.read("AccumulatedTimeTicks", Codec.LONG).orElse(0L);
         repositionPending = input.getBooleanOr("RepositionPending", false);
         required = toArray(input.read("Required", Codec.INT.listOf()).orElse(List.of()), required.length);
@@ -546,6 +564,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         output.putInt("MinTimeTicks", minTimeTicks);
         output.putInt("MaxTimeTicks", maxTimeTicks);
         output.putInt("Tier", tier);
+        output.putInt("AllowedTier", allowedTier);
         output.store("AccumulatedTimeTicks", Codec.LONG, accumulatedTimeTicks);
         output.store("Required", Codec.INT.listOf(), toList(required));
         output.store("Supplied", Codec.INT.listOf(), toList(supplied));

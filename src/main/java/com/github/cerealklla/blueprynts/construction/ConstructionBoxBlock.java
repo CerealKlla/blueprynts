@@ -105,30 +105,42 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Building Locator re-granted."));
             return InteractionResult.SUCCESS_SERVER;
         }
-        // Constrained to this box's own plot Zone Type, and -- since no plot-upgrade mechanism exists
-        // yet, every plot is "brand new" -- the lowest Tier only (T1, since 2026-09-29's T0-T4 -> T1-T5
-        // renumbering; this check itself was missed during that renumbering and left comparing against
-        // the now-nonexistent tier 0 until caught here). Both per user request, 2026-09-29; the Tier
-        // check should relax once a real plot-tier-progression feature exists.
-        // settlemynts:private_residence -- the old native id this box's zoneTypeId can still be
-        // carrying if it was bound before Settlemynts removed that built-in in favor of this mod's
-        // own bridged blueprynts:private_residence (2026-10-01) -- never matches any real Blueprint's
-        // own blueprint_type by raw Identifier equality, which otherwise leaves the picker silently
-        // empty for exactly that one type. Settlemynts' own ZoneTypeRegistry carries the equivalent
-        // alias for its side (wall rendering, Finalize); this is this mod's side of the same fix.
-        net.minecraft.resources.Identifier boxZoneTypeId = box.zoneTypeId();
-        if (boxZoneTypeId != null && boxZoneTypeId.equals(
+        // Never bound yet -- open the Tier picker first (not the Blueprint picker directly), per
+        // 2026-10-09's "allowedTier" rework: a plot's unlocked Tier cap (see
+        // `zone.PlotRecord#tier` on the Settlemynts side) may already be above 1 even before a
+        // first Blueprint is ever picked, so this must respect {@link ConstructionBoxBlockEntity#allowedTier()}
+        // rather than always assuming Tier 1 the way the old "no plot-upgrade mechanism exists yet"
+        // version of this method used to.
+        openTierPicker(serverPlayer, pos, box.allowedTier());
+        return InteractionResult.SUCCESS_SERVER;
+    }
+
+    /** Also called by {@code BluepryntsMod}'s "Change Blueprint" handler (the button on {@code client.ConstructionBoxScreen}). */
+    public static void openTierPicker(ServerPlayer player, BlockPos boxPos, int allowedTier) {
+        PacketDistributor.sendToPlayer(player, new OpenConstructionBoxTierPickerPayload(boxPos, allowedTier));
+    }
+
+    /**
+     * Builds the Blueprint-name picker payload for one specific, already-chosen Tier -- called by
+     * {@code BluepryntsMod}'s {@code SelectConstructionBoxTierPayload} handler (the second step of
+     * the Tier-picker -> Blueprint-picker flow). Same {@code settlemynts:private_residence} ->
+     * {@code blueprynts:private_residence} alias fix this method's predecessor always needed --
+     * never matches any real Blueprint's own {@code blueprint_type} by raw Identifier equality
+     * otherwise, which would leave the picker silently empty for exactly that one type.
+     */
+    public static OpenConstructionBoxPickerPayload buildBlueprintPicker(BlockPos boxPos, net.minecraft.resources.Identifier zoneTypeId, int tier) {
+        net.minecraft.resources.Identifier matchZoneTypeId = zoneTypeId;
+        if (matchZoneTypeId != null && matchZoneTypeId.equals(
                 net.minecraft.resources.Identifier.fromNamespaceAndPath("settlemynts", "private_residence"))) {
-            boxZoneTypeId = net.minecraft.resources.Identifier.fromNamespaceAndPath(
+            matchZoneTypeId = net.minecraft.resources.Identifier.fromNamespaceAndPath(
                     com.github.cerealklla.blueprynts.BluepryntsMod.MODID, "private_residence");
         }
-        net.minecraft.resources.Identifier matchZoneTypeId = boxZoneTypeId;
+        net.minecraft.resources.Identifier finalZoneTypeId = matchZoneTypeId;
         BlueprintStorage storage = BlueprintStorage.get();
         java.util.List<String> names = storage.listNames(record ->
-                record.blueprintTypeId().equals(matchZoneTypeId) && record.tier() == 1);
+                record.blueprintTypeId().equals(finalZoneTypeId) && record.tier() == tier);
         java.util.List<Long> fullMtimes = names.stream().map(name -> storage.previewAvailability(name).fullMtime()).toList();
         java.util.List<Long> smallMtimes = names.stream().map(name -> storage.previewAvailability(name).smallMtime()).toList();
-        PacketDistributor.sendToPlayer(serverPlayer, new OpenConstructionBoxPickerPayload(pos, names, fullMtimes, smallMtimes, false));
-        return InteractionResult.SUCCESS_SERVER;
+        return new OpenConstructionBoxPickerPayload(boxPos, names, fullMtimes, smallMtimes);
     }
 }

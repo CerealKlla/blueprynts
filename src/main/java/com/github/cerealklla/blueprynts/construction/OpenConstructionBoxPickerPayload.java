@@ -24,15 +24,13 @@ import net.minecraft.resources.Identifier;
  * OpenConstructionSiteScreenPayload} already uses for the editor's own richer picker, reused as-is
  * rather than duplicated.
  *
- * <p>{@code upgrade} (added 2026-10-09, Settlemynts' Plot Manager "Upgrade Plot" button) -- {@code
- * true} when this picker was opened to choose the box's *next* Tier up on an already-built box,
- * rather than its first-ever Blueprint. Threaded straight through to {@link
- * SelectConstructionBoxBlueprintPayload} on selection, so the server handler knows which of the two
- * very different code paths (fresh bind vs. tear-down-and-rebuild-at-a-new-tier) to run.
+ * <p><b>Widened 2026-10-09</b> -- now always reached via {@code ConstructionBoxTierPickerScreen}'s
+ * own prior step (pick a Tier, 1 through the box's {@code allowedTier} cap), so {@code names} is
+ * always filtered to one specific, already-chosen Tier -- see {@code
+ * BluepryntsMod}'s {@code SelectConstructionBoxTierPayload} handler, which builds this payload.
  */
 public record OpenConstructionBoxPickerPayload(BlockPos boxPos, List<String> names,
-                                                List<Long> fullPreviewMtimes, List<Long> smallPreviewMtimes,
-                                                boolean upgrade)
+                                                List<Long> fullPreviewMtimes, List<Long> smallPreviewMtimes)
         implements CustomPacketPayload {
 
     public static final Type<OpenConstructionBoxPickerPayload> TYPE =
@@ -43,7 +41,6 @@ public record OpenConstructionBoxPickerPayload(BlockPos boxPos, List<String> nam
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8), OpenConstructionBoxPickerPayload::names,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.VAR_LONG), OpenConstructionBoxPickerPayload::fullPreviewMtimes,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.VAR_LONG), OpenConstructionBoxPickerPayload::smallPreviewMtimes,
-            ByteBufCodecs.BOOL, OpenConstructionBoxPickerPayload::upgrade,
             OpenConstructionBoxPickerPayload::new);
 
     @Override

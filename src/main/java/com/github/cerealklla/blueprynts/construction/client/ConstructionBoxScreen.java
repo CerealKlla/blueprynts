@@ -4,6 +4,7 @@ import com.github.cerealklla.blueprynts.blueprint.GenericResource;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu;
 import com.github.cerealklla.blueprynts.construction.RepositionBuildingPayload;
 import com.github.cerealklla.blueprynts.construction.RepositionSupplyBoxPayload;
+import com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -42,7 +43,8 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     // Must match ConstructionBoxMenu#layoutSlots' own funding-slot y and player-inventory y exactly.
     private static final int TEXT_START_Y = 40;
     private static final int TEXT_LINE_HEIGHT = 10;
-    private static final int PLAYER_INV_Y = 132;
+    // Bumped 132 -> 156 (2026-10-09) to make room for the new third "Change Blueprint" button below.
+    private static final int PLAYER_INV_Y = 156;
 
     public ConstructionBoxScreen(ConstructionBoxMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, 176, PLAYER_INV_Y + 76 + 6);
@@ -63,6 +65,12 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
                 .build());
         addRenderableWidget(Button.builder(Component.literal("Reposition Supply Box"), b -> send(new RepositionSupplyBoxPayload(menu.boxPos())))
                 .bounds(buttonX, topPos + statusY + 38, buttonWidth, 20)
+                .build());
+        // "Change Blueprint" (added 2026-10-09) -- the only way to pick/rebuild at a different,
+        // already-unlocked Tier (or just a different Blueprint of the same Tier). Opens the new
+        // Tier-picker step first, see ConstructionBoxTierPickerScreen's own doc.
+        addRenderableWidget(Button.builder(Component.literal("Change Blueprint"), b -> send(new RequestConstructionBoxTierPickerPayload(menu.boxPos())))
+                .bounds(buttonX, topPos + statusY + 62, buttonWidth, 20)
                 .build());
     }
 
