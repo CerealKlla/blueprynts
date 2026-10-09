@@ -183,14 +183,17 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
 
         Set<Column> ring = SiteTerrainOps.computeBoundaryRing(markedColumns);
         TierSpec spec = TierSpec.fromOrdinal(tier);
+        BlueprintType type = BlueprintTypeRegistry.get(blueprintTypeId).orElse(new BlueprintType(blueprintTypeId, blueprintTypeId.toString(), 1.0));
+        int heightAboveGround = TierSpec.heightAboveGround(type, spec);
+        int depthBelowGround = TierSpec.depthBelowGround(type, spec);
         // +1: the protection guard allows building through relative Y = +heightAboveGround
         // inclusive, so the wall itself must span one block taller than heightAboveGround to
         // actually enclose that topmost buildable layer -- otherwise it stops one row short of
         // where the ceiling sits, leaving a visible gap between wall and ceiling (a real playtest
         // report, only noticeable once the ceiling gave something to compare the wall's top against).
-        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, spec.heightAboveGround() + 1, activePlayer);
-        GhostConstructionWallEntity.raiseCeiling(level, getBlockPos(), markedColumns, groundY + spec.heightAboveGround() + 1, activePlayer);
-        SiteTerrainOps.applyBelowGroundWool(level, markedColumns, groundY, spec.depthBelowGround(), snapshot);
+        GhostConstructionWallEntity.raise(level, getBlockPos(), ring, groundY, heightAboveGround + 1, activePlayer);
+        GhostConstructionWallEntity.raiseCeiling(level, getBlockPos(), markedColumns, groundY + heightAboveGround + 1, activePlayer);
+        SiteTerrainOps.applyBelowGroundWool(level, markedColumns, groundY, depthBelowGround, snapshot);
 
         phase = ConstructionSitePhase.CONSTRUCTING;
         setChanged();
@@ -265,6 +268,9 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
 
         int groundY = SiteTerrainOps.siteFloorY(getBlockPos());
         TierSpec spec = TierSpec.fromOrdinal(tier);
+        BlueprintType type = BlueprintTypeRegistry.get(blueprintTypeId).orElse(new BlueprintType(blueprintTypeId, blueprintTypeId.toString(), 1.0));
+        int heightAboveGround = TierSpec.heightAboveGround(type, spec);
+        int depthBelowGround = TierSpec.depthBelowGround(type, spec);
         Direction intoSite = intoSite();
         List<Column> relativeColumns = new ArrayList<>();
         List<BlueprintCell> cells = new ArrayList<>();
@@ -273,7 +279,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         for (Column column : markedColumns) {
             Column relative = SiteTerrainOps.toRelativeColumn(getBlockPos(), intoSite, column.x(), column.z());
             relativeColumns.add(relative);
-            for (int relY = -spec.depthBelowGround(); relY <= spec.heightAboveGround(); relY++) {
+            for (int relY = -depthBelowGround; relY <= heightAboveGround; relY++) {
                 BlockPos worldPos = new BlockPos(column.x(), groundY + relY, column.z());
                 BlockState state = level.getBlockState(worldPos);
                 if (relY < 0 && state.equals(existingBlock)) {
@@ -287,7 +293,7 @@ public class ConstructionSiteBlockEntity extends BlockEntity {
         List<BlueprintCell> sequencedCells = com.github.cerealklla.blueprynts.blueprint.SequenceComputer.assign(cells);
 
         BlueprintRecord record = new BlueprintRecord(BlueprintRecord.CURRENT_TEMPLATE_VERSION, name, player.getName().getString(),
-                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, spec.heightAboveGround(), spec.depthBelowGround(), sequencedCells, intoSite, sizeClass,
+                BlueprintStatus.UNREVIEWED, List.of(), blueprintTypeId, tier, relativeColumns, heightAboveGround, depthBelowGround, sequencedCells, intoSite, sizeClass,
                 com.github.cerealklla.blueprynts.blueprint.BlueprintResources.computeFrom(sequencedCells));
         BlueprintStorage.get().save(record);
         return null;

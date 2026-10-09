@@ -1,5 +1,11 @@
 package com.github.cerealklla.blueprynts.blueprint;
 
+import java.util.Map;
+
+import com.github.cerealklla.blueprynts.BluepryntsMod;
+
+import net.minecraft.resources.Identifier;
+
 /**
  * Vertical extent granted to a Construction Site's build volume per Tier (T1-T5) -- height above
  * the leveled ground surface, and depth below it. Deliberately placeholder numbers: the user was
@@ -41,6 +47,28 @@ public enum TierSpec {
     /** Blocks of below-ground extent, starting one block below the surface -- the surface layer itself is never "below ground." */
     public int depthBelowGround() {
         return depthBelowGround;
+    }
+
+    // Per-type overrides of (depthBelowGround, heightAboveGround), keyed by BlueprintType#id() --
+    // mirrors SlabBudget's own BASE_AREA_OVERRIDE_BY_TIER pattern. Recallcinite Stone (Recallcinite
+    // Totem feature): a narrow 9-tile footprint at Tier 1 but a generous vertical range, since it's
+    // meant to read as a tall/deep standing shrine rather than a building -- {0,3} at Tier 1 up to
+    // {5,9} (5 below, 9 above) at Tier 5, per the user's own explicit endpoints; the three middle
+    // tiers are a plain interpolation, flagged as tunable like every other table in this class.
+    private static final Map<Identifier, int[][]> HEIGHT_OVERRIDE_BY_TIER = Map.of(
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"),
+            new int[][] {{0, 3}, {1, 5}, {2, 6}, {4, 8}, {5, 9}});
+
+    /** Type-aware height above ground -- checks {@link #HEIGHT_OVERRIDE_BY_TIER} first, falling back to this Tier's own shared {@link #heightAboveGround()}. */
+    public static int heightAboveGround(BlueprintType type, TierSpec tier) {
+        int[][] override = HEIGHT_OVERRIDE_BY_TIER.get(type.id());
+        return override != null ? override[tier.ordinal()][1] : tier.heightAboveGround();
+    }
+
+    /** Type-aware depth below ground -- checks {@link #HEIGHT_OVERRIDE_BY_TIER} first, falling back to this Tier's own shared {@link #depthBelowGround()}. */
+    public static int depthBelowGround(BlueprintType type, TierSpec tier) {
+        int[][] override = HEIGHT_OVERRIDE_BY_TIER.get(type.id());
+        return override != null ? override[tier.ordinal()][0] : tier.depthBelowGround();
     }
 
     /** {@code tier} is the 1-based Tier number (1-5, matching this enum's own names), not a 0-based index. */

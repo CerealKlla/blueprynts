@@ -32,8 +32,12 @@ public final class SlabBudget {
     // (2026-10-05, explicit user request): 100 at Tier 1, escalating to 140 at Tier 5 -- a flatter
     // progression than the shared table's rough doubling, since a home's footprint shouldn't need
     // to grow nearly as fast as a production building's does.
+    // Recallcinite Stone (2026-10-09, Recallcinite Totem feature): 9 at Tier 1 up to 100 at Tier 5,
+    // per the user's own explicit endpoints -- the three middle values are a plain interpolation,
+    // flagged as tunable like every other table here.
     private static final Map<Identifier, int[]> BASE_AREA_OVERRIDE_BY_TIER = Map.of(
-            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "private_residence"), new int[] {100, 110, 120, 130, 140});
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "private_residence"), new int[] {100, 110, 120, 130, 140},
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"), new int[] {9, 20, 40, 65, 100});
 
     private SlabBudget() {
     }

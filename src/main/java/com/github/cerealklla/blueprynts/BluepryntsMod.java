@@ -145,6 +145,13 @@ public class BluepryntsMod {
         // to once one exists; no Shop Seed Catalog either (nothing real to sell yet).
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "tavern"), "Tavern", 1.0));
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "traveling_merchant_stall"), "Traveling Merchant Stall", 1.0));
+        // Recallcinite Stone (2026-10-09, Recallcinite Totem feature) -- a settlement-buildable
+        // shrine type; binding a Recallcinite Totem while standing on a plot zoned this type gives a
+        // reduced cooldown (see Settlemynts' own PlotRecord#tier and Lyfe's recallcinite package).
+        // Plain BlueprintType shape like every other vendor/infrastructure type above -- its
+        // distinguishing per-tier foundation/height numbers live in SlabBudget/TierSpec's own
+        // override maps, not here.
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "recallcinite_stone"), "Recallcinite Stone", 1.0));
 
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.

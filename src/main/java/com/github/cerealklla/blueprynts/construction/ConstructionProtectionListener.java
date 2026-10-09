@@ -1,9 +1,12 @@
 package com.github.cerealklla.blueprynts.construction;
 
+import com.github.cerealklla.blueprynts.blueprint.BlueprintType;
+import com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry;
 import com.github.cerealklla.blueprynts.blueprint.TierSpec;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.ICancellableEvent;
@@ -71,7 +74,11 @@ public final class ConstructionProtectionListener {
             return false;
         }
         TierSpec spec = TierSpec.fromOrdinal(site.tier());
+        Identifier blueprintTypeId = site.blueprintTypeId();
+        BlueprintType type = blueprintTypeId != null
+                ? BlueprintTypeRegistry.get(blueprintTypeId).orElse(new BlueprintType(blueprintTypeId, blueprintTypeId.toString(), 1.0))
+                : new BlueprintType(Identifier.fromNamespaceAndPath(com.github.cerealklla.blueprynts.BluepryntsMod.MODID, "unknown"), "Unknown", 1.0);
         int relY = target.getY() - sitePos.getY();
-        return relY >= -spec.depthBelowGround() && relY <= spec.heightAboveGround();
+        return relY >= -TierSpec.depthBelowGround(type, spec) && relY <= TierSpec.heightAboveGround(type, spec);
     }
 }

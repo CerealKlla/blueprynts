@@ -52,6 +52,8 @@ public final class SettlemyntsZoneBridge {
             // Two new stubbed-out types, 2026-10-09.
             case "tavern" -> Blocks.PURPLE_STAINED_GLASS;
             case "traveling_merchant_stall" -> Blocks.MAGENTA_STAINED_GLASS;
+            // Recallcinite Totem feature, 2026-10-09 -- black, matching the totem's own obsidian theme.
+            case "recallcinite_stone" -> Blocks.BLACK_STAINED_GLASS;
             default -> Blocks.LIGHT_GRAY_STAINED_GLASS;
         };
     }
