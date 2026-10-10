@@ -258,9 +258,20 @@ public class BluepryntsMod {
                     if (box.placedBlueprintName() == null) {
                         return;
                     }
-                    if (!box.blueprintPlaced() && box.everCompleted()) {
-                        // Mid-Reposition already (a Locator is already out there somewhere) -- nothing
-                        // new to do.
+                    // Real bug fixed 2026-10-10: this used to check `!blueprintPlaced() &&
+                    // everCompleted()` as a proxy for "a Locator is already out there somewhere" --
+                    // but that same state (blueprintPlaced() == false, everCompleted() == true) is
+                    // ALSO exactly what a box looks like while mid-funding a Tier upgrade on a
+                    // previously-completed structure (never rebuilt yet at the new Tier, but
+                    // definitely completed once before). That silently no-op'd "Reposition Building"
+                    // for the entire duration of any Tier-upgrade funding -- real report: "Reposition
+                    // Building is still not working" while funding a Tier 2 upgrade. The actual,
+                    // unambiguous signal for "a Locator is already outstanding" is {@code
+                    // repositionPending} itself (the same flag {@link ConstructionBoxBlockEntity#isFundable}
+                    // already trusts for this), so check that directly instead of the ambiguous proxy.
+                    if (box.repositionPending()) {
+                        player.sendSystemMessage(Component.literal(
+                                "Already mid-Reposition -- use your current Building Locator to place it, or drop it to cancel."));
                         return;
                     }
                     boolean wasBuilt = box.everCompleted();
