@@ -21,9 +21,20 @@ import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
  */
 public final class FootprintSlabGuard {
 
+    // Real live bug, 2026-10-10: a genuinely full inventory makes vanilla's own
+    // Inventory#placeItemBackInInventory fall back to Player#drop as ITS last resort, which fires a
+    // brand new ItemTossEvent for the same slab -- caught by this same onToss, canceled, retried,
+    // and falling back the same way again, forever. Confirmed live on Production: a server session's
+    // entire log was ~580,000 lines of nothing but this one StackOverflowError repeating roughly once
+    // a second, which is almost certainly what made RCON stop responding and forced a kill. This flag
+    // breaks the loop -- while a fallback placement is already in progress, a re-entrant toss of the
+    // same item is let through un-canceled instead of retried, so the rare "truly no room anywhere"
+    // case just drops the slab on the ground (recoverable) rather than hanging the server (not).
+    private boolean handlingFallback = false;
+
     @SubscribeEvent
     public void onToss(ItemTossEvent event) {
-        if (!FootprintSlabBlock.isFootprintSlab(event.getEntity().getItem())) {
+        if (handlingFallback || !FootprintSlabBlock.isFootprintSlab(event.getEntity().getItem())) {
             return;
         }
         ItemStack stack = event.getEntity().getItem().copy();
@@ -33,7 +44,12 @@ public final class FootprintSlabGuard {
         // added back explicitly, not just left alone.
         Player player = event.getPlayer();
         if (!player.getInventory().add(stack)) {
-            player.getInventory().placeItemBackInInventory(stack);
+            handlingFallback = true;
+            try {
+                player.getInventory().placeItemBackInInventory(stack);
+            } finally {
+                handlingFallback = false;
+            }
         }
     }
 
@@ -49,7 +65,12 @@ public final class FootprintSlabGuard {
             }
             ItemStack stack = slot.remove(slot.getItem().getCount());
             if (!player.getInventory().add(stack)) {
-                player.getInventory().placeItemBackInInventory(stack);
+                handlingFallback = true;
+                try {
+                    player.getInventory().placeItemBackInInventory(stack);
+                } finally {
+                    handlingFallback = false;
+                }
             }
         }
     }
