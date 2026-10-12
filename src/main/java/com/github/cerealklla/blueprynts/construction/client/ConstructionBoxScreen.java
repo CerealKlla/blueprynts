@@ -51,6 +51,8 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     // is exactly the "floating icons" bug described in this class's own doc above.
     private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + 14;
 
+    private boolean manageButtonAdded;
+
     public ConstructionBoxScreen(ConstructionBoxMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, 176, PLAYER_INV_Y + 76 + 6);
         this.inventoryLabelY = PLAYER_INV_Y - 10;
@@ -59,9 +61,39 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     @Override
     protected void init() {
         super.init();
-        if (!menu.canManage()) {
+        tryAddManageButton();
+    }
+
+    /**
+     * Real bug found 2026-10-12, live: {@link #init()} used to check {@link ConstructionBoxMenu
+     * #canManage()} directly and only ever ran once, at screen-open time -- but {@code canManage}
+     * reaches the client through the same {@code ContainerData} sync every other field here uses
+     * (`boxPos`/`everCompleted`/`blueprintPlaced`), which arrives in a *separate* packet from the one
+     * that triggers this screen's own construction. Every other field reads that sync continuously in
+     * {@code extractRenderState}, so an occasional late arrival self-heals invisibly within a frame;
+     * this one made a one-time, permanent decision ("add the button, or don't") off whatever value
+     * happened to be in the client-side cache at that exact instant -- almost always still the default
+     * {@code 0} (not-yet-synced), which is exactly why the "Manage" button was reported missing even
+     * once the server-side permission computation itself was confirmed correct (`[CanManageDebug]`
+     * logging showed `canManage=true` for the same open that showed no button). Fixed by checking on
+     * every client tick instead of once -- {@link #containerTick()} already runs every tick while this
+     * screen is open, same mechanism vanilla's own furnace screen uses for its live burn-progress
+     * arrow, so this is the standing shape for "a value this screen needs for its initial layout, but
+     * won't have on the very first frame" going forward, not a one-off patch. {@code canManage} itself
+     * never changes mid-session (same permission for the life of one menu open), so this only ever
+     * adds the button once, the first tick it becomes available, and never removes it again.
+     */
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+        tryAddManageButton();
+    }
+
+    private void tryAddManageButton() {
+        if (manageButtonAdded || !menu.canManage()) {
             return;
         }
+        manageButtonAdded = true;
         int buttonWidth = 150;
         int buttonX = leftPos + (imageWidth - buttonWidth) / 2;
         addRenderableWidget(Button.builder(Component.literal("Manage"),
