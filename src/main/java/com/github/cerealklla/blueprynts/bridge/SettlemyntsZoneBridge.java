@@ -54,6 +54,8 @@ public final class SettlemyntsZoneBridge {
             case "traveling_merchant_stall" -> Blocks.MAGENTA_STAINED_GLASS;
             // Recallcinite Totem feature, 2026-10-09 -- black, matching the totem's own obsidian theme.
             case "recallcinite_stone" -> Blocks.BLACK_STAINED_GLASS;
+            // Mineshaft, 2026-10-11 -- blue, an ore/mining-coded color not already claimed above.
+            case "mineshaft" -> Blocks.BLUE_STAINED_GLASS;
             default -> Blocks.LIGHT_GRAY_STAINED_GLASS;
         };
     }

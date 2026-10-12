@@ -55,9 +55,14 @@ public enum TierSpec {
     // meant to read as a tall/deep standing shrine rather than a building -- {0,3} at Tier 1 up to
     // {5,9} (5 below, 9 above) at Tier 5, per the user's own explicit endpoints; the three middle
     // tiers are a plain interpolation, flagged as tunable like every other table in this class.
+    // Mineshaft (2026-10-11, explicit user request): -3/+4 at Tier 1 up to -8/+6 at Tier 5 --
+    // {depthBelowGround, heightAboveGround} per tier, three middle tiers interpolated and flagged
+    // tunable like every other entry in this table.
     private static final Map<Identifier, int[][]> HEIGHT_OVERRIDE_BY_TIER = Map.of(
             Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"),
-            new int[][] {{0, 3}, {1, 5}, {2, 6}, {4, 8}, {5, 9}});
+            new int[][] {{0, 3}, {1, 5}, {2, 6}, {4, 8}, {5, 9}},
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "mineshaft"),
+            new int[][] {{3, 4}, {4, 4}, {5, 5}, {7, 5}, {8, 6}});
 
     /** Type-aware height above ground -- checks {@link #HEIGHT_OVERRIDE_BY_TIER} first, falling back to this Tier's own shared {@link #heightAboveGround()}. */
     public static int heightAboveGround(BlueprintType type, TierSpec tier) {

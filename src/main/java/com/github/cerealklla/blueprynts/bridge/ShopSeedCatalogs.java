@@ -20,6 +20,13 @@ import net.minecraft.world.level.biome.Biomes;
  * lives in Lyfe's own {@code structure.ShopSeedCatalogs} instead. This class must only ever be
  * referenced from behind a {@code ModList.get().isLoaded("settlemynts")} check at the call site.
  *
+ * <p><b>Mineshaft</b> (added 2026-10-11) -- the full {@code mineshaft.MineLootTable} item pool, so a
+ * freshly-finalized plot's owner can list its own ore output without first discovering the exact
+ * item ids by hand. Real gap found live: a brand-new Mineshaft plot had no default listings at all
+ * and "would not be functional without player intervention," unlike Lumberyard/Farm/Stonemason,
+ * which all get a catalog here already. Prices below are placeholder fallbacks only (see the note
+ * right below) -- Yconomics' derived pricing takes over automatically once that mod is loaded.
+ *
  * <p><b>Listing-registration only -- never auto-stocked, 2026-10-06 correction</b> -- a prior pass
  * had every one of these entries auto-deposited into the shop's own boxes (a full stack of every
  * wood species, every door/stair, every cut-stone good), none of which was ever actually asked for.
@@ -47,6 +54,8 @@ public final class ShopSeedCatalogs {
                 (level, plotAnchor, plotTier) -> BUILDING_SUPPLIER_LISTINGS);
         Settlemynts.registerShopSeedCatalog(Identifier.fromNamespaceAndPath("blueprynts", "stonemason"),
                 (level, plotAnchor, plotTier) -> STONEMASON_LISTINGS);
+        Settlemynts.registerShopSeedCatalog(Identifier.fromNamespaceAndPath("blueprynts", "mineshaft"),
+                (level, plotAnchor, plotTier) -> MINESHAFT_LISTINGS);
     }
 
     // ---- Lumberyard: every wood species' logs/planks, the plot's own local species priced well
@@ -176,5 +185,29 @@ public final class ShopSeedCatalogs {
             SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("chiseled_stone_bricks")), 3, 32),
             SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("polished_deepslate")), 3, 64),
             SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("bricks")), 3, 64)
+    );
+
+    // ---- Mineshaft: every item mineshaft.MineLootTable can actually produce, so a fresh plot has
+    // real default listings from the start instead of requiring the owner to discover item ids by
+    // hand. Not Tier-gated here (every item is listable regardless of Tier) -- the Tier only affects
+    // which items the Miner actually finds via MineLootTable itself, not what the Shop can sell.
+    //
+    // stockCount is 0 for every entry here -- real correction, 2026-10-11, live report: a nonzero
+    // stockCount here doesn't just inform the Shop UI, it's also reused verbatim as this plot's
+    // Planned Inventory "happy state" target (ShopSeeding#autoPopulatePlannedInventory), which would
+    // make a brand-new Mineshaft plot try to *buy* its own ore output from other plots overnight to
+    // reach that target -- backwards for a plot whose only job is selling what its own Miner already
+    // produces. 0 means "happy with none," so it never participates as a Planned Inventory buyer for
+    // these, while still supplying a real price/listing suggestion in Manage Shop.
+    private static final List<SeedListing> MINESHAFT_LISTINGS = List.of(
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("cobblestone")), 1, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("coal")), 2, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("raw_copper")), 3, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("raw_iron")), 4, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("raw_gold")), 6, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("redstone")), 3, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("lapis_lazuli")), 3, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("diamond")), 20, 0),
+            SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("emerald")), 15, 0)
     );
 }

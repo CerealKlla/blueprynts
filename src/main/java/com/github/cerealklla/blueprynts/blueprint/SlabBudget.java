@@ -35,9 +35,13 @@ public final class SlabBudget {
     // Recallcinite Stone (2026-10-09, Recallcinite Totem feature): 9 at Tier 1 up to 100 at Tier 5,
     // per the user's own explicit endpoints -- the three middle values are a plain interpolation,
     // flagged as tunable like every other table here.
+    // Mineshaft (2026-10-11, explicit user request: 5x5 at Tier 1 growing to 8x8 at Tier 5) -- an
+    // area budget matching those endpoints exactly (25 -> 64), three middle values interpolated and
+    // flagged tunable like every other entry in this table.
     private static final Map<Identifier, int[]> BASE_AREA_OVERRIDE_BY_TIER = Map.of(
             Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "private_residence"), new int[] {100, 110, 120, 130, 140},
-            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"), new int[] {9, 20, 40, 65, 100});
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"), new int[] {9, 20, 40, 65, 100},
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "mineshaft"), new int[] {25, 34, 44, 54, 64});
 
     private SlabBudget() {
     }

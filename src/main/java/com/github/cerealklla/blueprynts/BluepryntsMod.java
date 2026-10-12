@@ -152,6 +152,11 @@ public class BluepryntsMod {
         // distinguishing per-tier foundation/height numbers live in SlabBudget/TierSpec's own
         // override maps, not here.
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "recallcinite_stone"), "Recallcinite Stone", 1.0));
+        // Mineshaft (explicit user request, 2026-10-11) -- a mined-resource-producing Plot Type, same
+        // shape as Farm/Lumberyard (npcOwnedOnly = false, a player can own one, the worker NPC only
+        // auto-spawns while it stays NPC-owned). Its asymmetric per-tier footprint/depth (5x5/-3/+4 at
+        // Tier 1 up to 8x8/-8/+6 at Tier 5) lives in SlabBudget/TierSpec's own override maps, not here.
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "mineshaft"), "Mineshaft", 1.0));
 
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.
