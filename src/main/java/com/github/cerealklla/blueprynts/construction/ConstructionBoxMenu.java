@@ -31,17 +31,25 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private static final int BOX_Z_INDEX = RESOURCE_COUNT * 2 + 2;
     private static final int BLUEPRINT_PLACED_INDEX = RESOURCE_COUNT * 2 + 3;
     private static final int EVER_COMPLETED_INDEX = RESOURCE_COUNT * 2 + 4;
-    private static final int DATA_SIZE = RESOURCE_COUNT * 2 + 5;
+    private static final int CAN_MANAGE_INDEX = RESOURCE_COUNT * 2 + 5;
+    private static final int DATA_SIZE = RESOURCE_COUNT * 2 + 6;
 
     private final ConstructionBoxBlockEntity box; // null on the client's own reconstructed instance
     private final Container fundingContainer;
     private final ContainerData data;
+    // Computed once at open time (permission doesn't change mid-session) -- only meaningful
+    // server-side; the client's own reconstructed menu always has box == null here and instead reads
+    // the real value through SyncedData, same as boxPos()/everCompleted() below. See
+    // bridge.SettlemyntsPermissionBridge's own doc for why Settlemynts-not-loaded defaults to true.
+    private final boolean canManage;
 
     /** Server-side: a real box backs this menu. */
     public ConstructionBoxMenu(MenuType<?> type, int containerId, Inventory inventory, ConstructionBoxBlockEntity box) {
         super(type, containerId);
         this.box = box;
         this.fundingContainer = new SimpleContainer(RESOURCE_COUNT);
+        this.canManage = box != null && box.getLevel() instanceof ServerLevel serverLevel
+                && com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(serverLevel, box.getBlockPos(), inventory.player.getUUID());
         this.data = new SyncedData();
         addDataSlots(data);
         layoutSlots(inventory);
@@ -55,9 +63,11 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // Must match ConstructionBoxScreen's own layout constants exactly (funding-slot y, and the
     // player-inventory y both mods' text/background positioning is built around).
     private static final int FUNDING_SLOT_Y = 18;
-    // Bumped 132 -> 156 (2026-10-09) to make room for the new third "Change Blueprint" button on
-    // client.ConstructionBoxScreen -- must match that class's own copy of this constant exactly.
-    private static final int PLAYER_INV_Y = 156;
+    // Reworked 2026-10-12 -- this screen now shows a single "Manage" button (gated on canManage())
+    // instead of four, which used to keep outgrowing this constant every time one was added (132 ->
+    // 156 -> 180, each one landing short again) -- see ConstructionBoxScreen's own doc. Must match
+    // that class's own copy of this constant exactly.
+    private static final int PLAYER_INV_Y = 124;
 
     private void layoutSlots(Inventory inventory) {
         GenericResource[] resources = GenericResource.values();
@@ -136,6 +146,11 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         return new BlockPos(data.get(BOX_X_INDEX), data.get(BOX_Y_INDEX), data.get(BOX_Z_INDEX));
     }
 
+    /** Mayor/Town Planner/Owner -- see {@code bridge.SettlemyntsPermissionBridge}'s own doc. Gates the "Manage" button on {@code client.ConstructionBoxScreen}. */
+    public boolean canManage() {
+        return data.get(CAN_MANAGE_INDEX) != 0;
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         // Shift-clicking a funding row does nothing special (it's a funnel, not real storage --
@@ -195,7 +210,10 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
             if (index == BLUEPRINT_PLACED_INDEX) {
                 return box.blueprintPlaced() ? 1 : 0;
             }
-            return box.everCompleted() ? 1 : 0;
+            if (index == EVER_COMPLETED_INDEX) {
+                return box.everCompleted() ? 1 : 0;
+            }
+            return canManage ? 1 : 0;
         }
 
         @Override

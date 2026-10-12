@@ -194,6 +194,10 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                        player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
+                        return;
+                    }
                     ConstructionBoxBlock.openTierPicker(player, payload.boxPos(), box.allowedTier());
                 });
 
@@ -202,6 +206,10 @@ public class BluepryntsMod {
                 (payload, context) -> {
                     if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
+                        return;
+                    }
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                        player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
                     net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
@@ -274,6 +282,10 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                        player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
+                        return;
+                    }
                     if (box.placedBlueprintName() == null) {
                         return;
                     }
@@ -328,6 +340,10 @@ public class BluepryntsMod {
                 (payload, context) -> {
                     if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
+                        return;
+                    }
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                        player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
                     Direction facing = level.getBlockState(payload.boxPos()).getValue(HorizontalDirectionalBlock.FACING);
