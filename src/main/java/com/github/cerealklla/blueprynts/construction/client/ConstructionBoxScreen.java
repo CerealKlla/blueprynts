@@ -43,8 +43,11 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     // Must match ConstructionBoxMenu#layoutSlots' own funding-slot y and player-inventory y exactly.
     private static final int TEXT_START_Y = 40;
     private static final int TEXT_LINE_HEIGHT = 10;
-    // Bumped 132 -> 156 (2026-10-09) to make room for the new third "Change Blueprint" button below.
-    private static final int PLAYER_INV_Y = 156;
+    // Bumped 132 -> 156 (2026-10-09) for the third "Change Blueprint" button, then 156 -> 180
+    // (2026-10-12) for the fourth "View Ledger" button -- the window height wasn't grown when that
+    // button was added, so it rendered on top of the player-inventory panel (real report: title/
+    // button text overlapping inventory item icons).
+    private static final int PLAYER_INV_Y = 180;
 
     public ConstructionBoxScreen(ConstructionBoxMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, 176, PLAYER_INV_Y + 76 + 6);
