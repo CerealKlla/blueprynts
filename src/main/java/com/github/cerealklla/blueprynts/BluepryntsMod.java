@@ -183,6 +183,9 @@ public class BluepryntsMod {
         registrar.playToClient(com.github.cerealklla.blueprynts.construction.OpenConstructionBoxTierPickerPayload.TYPE,
                 com.github.cerealklla.blueprynts.construction.OpenConstructionBoxTierPickerPayload.STREAM_CODEC,
                 (payload, context) -> ClientConstructionRequests.requestConstructionBoxTierPickerScreen(payload));
+        registrar.playToClient(com.github.cerealklla.blueprynts.construction.OpenLedgerPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.OpenLedgerPayload.STREAM_CODEC,
+                (payload, context) -> ClientConstructionRequests.requestOpenLedger(payload));
 
         registrar.playToServer(com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.TYPE,
                 com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.STREAM_CODEC,
@@ -192,6 +195,17 @@ public class BluepryntsMod {
                         return;
                     }
                     ConstructionBoxBlock.openTierPicker(player, payload.boxPos(), box.allowedTier());
+                });
+
+        registrar.playToServer(com.github.cerealklla.blueprynts.construction.RequestLedgerPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.RequestLedgerPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)
+                            || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
+                        return;
+                    }
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                            com.github.cerealklla.blueprynts.construction.ConstructionBoxBlock.buildLedgerPages(box));
                 });
 
         registrar.playToServer(com.github.cerealklla.blueprynts.construction.SelectConstructionBoxTierPayload.TYPE,

@@ -142,6 +142,29 @@ public final class Blueprynts {
     }
 
     /**
+     * Appends one line to {@code boxPos}'s Building Supply Box transaction ledger (added
+     * 2026-10-12) -- the intended call site for any mod recording a Shop purchase/sale against the
+     * owning plot, e.g. Settlemynts' own buy/sell handlers and its nightly inter-plot Planned
+     * Inventory settlement. No-op if the box isn't loaded; this mod knows nothing about Shops,
+     * gold, or plots itself -- {@code line} is the caller's own already-formatted description.
+     */
+    public static void appendLedgerEntry(ServerLevel level, BlockPos boxPos, String line) {
+        if (level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box) {
+            box.appendLedgerEntry(level.getGameTime(), line);
+        }
+    }
+
+    /** Every recorded ledger line for {@code boxPos}'s box, oldest first, formatted as {@code "Day N: <line>"}. Empty if the box isn't loaded or has no entries yet. */
+    public static java.util.List<String> getLedgerLines(ServerLevel level, BlockPos boxPos) {
+        if (!(level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box)) {
+            return java.util.List.of();
+        }
+        return box.ledger().stream()
+                .map(entry -> "Day " + (entry.gameTime() / 24000L) + ": " + entry.line())
+                .toList();
+    }
+
+    /**
      * The bound Blueprint's own Tier (1-5), for an external mod that needs to scale something by it
      * without ever importing {@code construction.ConstructionBoxBlockEntity} directly -- added
      * 2026-09-30 for Settlemynts' Guardhouse Plot Type (garrison size/gear caps scale by Tier).

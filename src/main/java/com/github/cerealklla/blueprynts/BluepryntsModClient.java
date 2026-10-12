@@ -62,6 +62,14 @@ public class BluepryntsModClient {
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new ConstructionBoxPickerScreen(request)));
         ClientConstructionRequests.takePendingConstructionBoxTierPickerScreen()
                 .ifPresent(request -> Minecraft.getInstance().setScreen(new ConstructionBoxTierPickerScreen(request)));
+        ClientConstructionRequests.takePendingOpenLedger()
+                .ifPresent(request -> {
+                    java.util.List<net.minecraft.network.chat.Component> pages = request.pages().stream()
+                            .<net.minecraft.network.chat.Component>map(net.minecraft.network.chat.Component::literal)
+                            .toList();
+                    Minecraft.getInstance().setScreen(new net.minecraft.client.gui.screens.inventory.BookViewScreen(
+                            new net.minecraft.client.gui.screens.inventory.BookViewScreen.BookAccess(pages)));
+                });
         for (var image : ClientConstructionRequests.takePendingPreviewImages()) {
             ClientBlueprintPreviewCache.store(image.name(), image.variant(), image.mtime(), image.pngBytes());
         }

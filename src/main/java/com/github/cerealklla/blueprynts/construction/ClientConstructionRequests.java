@@ -21,6 +21,7 @@ public final class ClientConstructionRequests {
     private static volatile OpenSlabRemoveScreenPayload pendingSlabRemove;
     private static volatile OpenConstructionBoxPickerPayload pendingConstructionBoxPicker;
     private static volatile OpenConstructionBoxTierPickerPayload pendingConstructionBoxTierPicker;
+    private static volatile OpenLedgerPayload pendingOpenLedger;
     private static final Queue<BlueprintPreviewImagePayload> pendingPreviewImages = new ConcurrentLinkedQueue<>();
 
     private ClientConstructionRequests() {
@@ -63,6 +64,16 @@ public final class ClientConstructionRequests {
     public static Optional<OpenConstructionBoxTierPickerPayload> takePendingConstructionBoxTierPickerScreen() {
         OpenConstructionBoxTierPickerPayload request = pendingConstructionBoxTierPicker;
         pendingConstructionBoxTierPicker = null;
+        return Optional.ofNullable(request);
+    }
+
+    public static void requestOpenLedger(OpenLedgerPayload payload) {
+        pendingOpenLedger = payload;
+    }
+
+    public static Optional<OpenLedgerPayload> takePendingOpenLedger() {
+        OpenLedgerPayload request = pendingOpenLedger;
+        pendingOpenLedger = null;
         return Optional.ofNullable(request);
     }
 

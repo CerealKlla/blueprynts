@@ -72,6 +72,13 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         addRenderableWidget(Button.builder(Component.literal("Change Blueprint"), b -> send(new RequestConstructionBoxTierPickerPayload(menu.boxPos())))
                 .bounds(buttonX, topPos + statusY + 62, buttonWidth, 20)
                 .build());
+        // "View Ledger" (added 2026-10-12) -- a read-only record of every purchase/sale touching
+        // this plot's Shop, see LedgerEntry's own doc. Opens a real BookViewScreen built fresh from
+        // the box's own state, never a real held item.
+        addRenderableWidget(Button.builder(Component.literal("View Ledger"),
+                b -> send(new com.github.cerealklla.blueprynts.construction.RequestLedgerPayload(menu.boxPos())))
+                .bounds(buttonX, topPos + statusY + 86, buttonWidth, 20)
+                .build());
     }
 
     private void send(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {

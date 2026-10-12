@@ -144,4 +144,22 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
         java.util.List<Long> smallMtimes = matches.stream().map(BlueprintStorage.NameAndAvailability::smallMtime).toList();
         return new OpenConstructionBoxPickerPayload(boxPos, names, fullMtimes, smallMtimes);
     }
+
+    /** Lines per vanilla book page -- a plain readability budget (same idea as Kyt's own {@code WelcomeBookContent#PAGE_CHAR_BUDGET}), not an engine limit. */
+    private static final int LEDGER_LINES_PER_PAGE = 12;
+
+    /** Paginates {@code box}'s own ledger (oldest first) into book-page-sized chunks for {@link OpenLedgerPayload}. An empty ledger still gets one page saying so, so "View Ledger" never opens a blank book. */
+    public static OpenLedgerPayload buildLedgerPages(ConstructionBoxBlockEntity box) {
+        java.util.List<String> lines = box.ledger().stream()
+                .map(entry -> "Day " + (entry.gameTime() / 24000L) + ": " + entry.line())
+                .toList();
+        if (lines.isEmpty()) {
+            return new OpenLedgerPayload(java.util.List.of("No transactions recorded yet."));
+        }
+        java.util.List<String> pages = new java.util.ArrayList<>();
+        for (int i = 0; i < lines.size(); i += LEDGER_LINES_PER_PAGE) {
+            pages.add(String.join("\n", lines.subList(i, Math.min(i + LEDGER_LINES_PER_PAGE, lines.size()))));
+        }
+        return new OpenLedgerPayload(pages);
+    }
 }

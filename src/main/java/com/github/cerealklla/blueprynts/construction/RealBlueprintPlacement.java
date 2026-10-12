@@ -49,6 +49,25 @@ public final class RealBlueprintPlacement {
     private RealBlueprintPlacement() {
     }
 
+    /**
+     * True for a cell whose captured state is the {@link ExistingBlock} ("Brown Wool") sentinel --
+     * real bug found live, 2026-10-12: {@code ConstructionSiteBlockEntity#saveBlueprint} only ever
+     * converts a below-ground {@code ExistingBlock} cell to the empty-state {@code PRE_EXISTING}
+     * sentinel ({@code BlueprintCell#isPreExisting}); the ground-floor row ({@code relY == 0}) is
+     * deliberately always captured as a real state instead (see {@code SiteTerrainOps
+     * #levelClearingArea}'s own doc, "the floor is never below ground"). That's correct for the
+     * *editor*, where the floor visibly needs to render as something -- but this class's own doc has
+     * always claimed a real paste "no ExistingBlock ('Brown Wool') floor sentinel is painted," which
+     * was never actually true: {@link #place} had no code enforcing it, so any Blueprint whose floor
+     * was never actually built on (left as the editor's own placeholder) painted real, permanent,
+     * visible "wool" into the world on every real paste. Treated the same as {@code isPreExisting()}
+     * everywhere this class touches a cell -- leave whatever's really there alone, don't overwrite it.
+     */
+    private static boolean isUntouchedFloorSentinel(BlueprintCell cell) {
+        return cell.state().isPresent()
+                && cell.state().get().is(com.github.cerealklla.blueprynts.registration.ModBlocks.EXISTING_BLOCK.get());
+    }
+
     public record Result(String error, TerrainSnapshot snapshot) {
         public static Result failure(String error) {
             return new Result(error, new TerrainSnapshot());
@@ -113,6 +132,9 @@ public final class RealBlueprintPlacement {
         TerrainSnapshot snapshot = accumulateInto != null ? accumulateInto : new TerrainSnapshot();
         for (int i = 0; i < cutoff; i++) {
             BlueprintCell cell = placeable.get(i);
+            if (isUntouchedFloorSentinel(cell)) {
+                continue;
+            }
             Column world = SiteTerrainOps.toWorldColumn(boxPos, intoSite, new Column(cell.relX(), cell.relZ()));
             BlockPos worldPos = new BlockPos(world.x(), groundY + cell.relY(), world.z());
             snapshot.captureIfAbsent(worldPos, level.getBlockState(worldPos));
@@ -144,7 +166,7 @@ public final class RealBlueprintPlacement {
         int groundY = SiteTerrainOps.siteFloorY(anchor);
         Set<BlockPos> positions = new HashSet<>();
         for (BlueprintCell cell : record.cells()) {
-            if (cell.isPreExisting()) {
+            if (cell.isPreExisting() || isUntouchedFloorSentinel(cell)) {
                 continue;
             }
             Column world = SiteTerrainOps.toWorldColumn(anchor, intoSite, new Column(cell.relX(), cell.relZ()));

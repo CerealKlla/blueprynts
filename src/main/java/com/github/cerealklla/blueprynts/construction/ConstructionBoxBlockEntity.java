@@ -155,6 +155,15 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     // reload it just redundantly re-pastes the same already-correct cells once, harmless.
     private int lastBuiltPercent = -1;
 
+    // Transaction ledger (added 2026-10-12, explicit user request) -- a standing, human-readable
+    // record of every purchase/sale touching the owning plot's Shop, appended via a thin
+    // api.Blueprynts facade call rather than built here (this mod knows nothing about Shops or
+    // gold). Capped so it can't grow unbounded over a long-lived world -- oldest entries drop off
+    // first, same "it's a diagnostic trail, not an audit requirement" framing as everything else
+    // this suite logs.
+    private static final int LEDGER_MAX_ENTRIES = 200;
+    private final List<LedgerEntry> ledger = new ArrayList<>();
+
     public ConstructionBoxBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.CONSTRUCTION_BOX.get(), pos, state);
     }
@@ -336,6 +345,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         this.allowedTier = source.allowedTier;
         this.accumulatedTimeTicks = source.accumulatedTimeTicks;
         this.lastBuiltPercent = source.lastBuiltPercent;
+        this.ledger.clear();
+        this.ledger.addAll(source.ledger);
         setChanged();
     }
 
@@ -354,6 +365,20 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     public int allowedTier() {
         return allowedTier;
+    }
+
+    /** Every recorded ledger line, oldest first -- see the field's own doc. Never {@code null}. */
+    public List<LedgerEntry> ledger() {
+        return ledger;
+    }
+
+    /** Appends one line, trimming the oldest entry if already at {@link #LEDGER_MAX_ENTRIES}. */
+    public void appendLedgerEntry(long gameTime, String line) {
+        ledger.add(new LedgerEntry(gameTime, line));
+        while (ledger.size() > LEDGER_MAX_ENTRIES) {
+            ledger.remove(0);
+        }
+        setChanged();
     }
 
     public void setAllowedTier(int allowedTier) {
@@ -543,6 +568,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         repositionPending = input.getBooleanOr("RepositionPending", false);
         required = toArray(input.read("Required", Codec.INT.listOf()).orElse(List.of()), required.length);
         supplied = toArray(input.read("Supplied", Codec.INT.listOf()).orElse(List.of()), supplied.length);
+        ledger.clear();
+        ledger.addAll(input.read("Ledger", LedgerEntry.CODEC.listOf()).orElse(List.of()));
     }
 
     @Override
@@ -568,6 +595,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         output.store("AccumulatedTimeTicks", Codec.LONG, accumulatedTimeTicks);
         output.store("Required", Codec.INT.listOf(), toList(required));
         output.store("Supplied", Codec.INT.listOf(), toList(supplied));
+        output.store("Ledger", LedgerEntry.CODEC.listOf(), ledger);
     }
 
     @Override
