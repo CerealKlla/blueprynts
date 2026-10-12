@@ -142,11 +142,14 @@ public class ConstructionSiteBlock extends HorizontalDirectionalBlock implements
         List<String> typeLabels = BlueprintTypeRegistry.all().stream().map(BlueprintType::label).toList();
         com.github.cerealklla.blueprynts.blueprint.BlueprintStorage storage =
                 com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.get();
-        List<String> savedNames = storage.listNames();
-        List<Long> fullMtimes = savedNames.stream()
-                .map(name -> storage.previewAvailability(name).fullMtime()).toList();
-        List<Long> smallMtimes = savedNames.stream()
-                .map(name -> storage.previewAvailability(name).smallMtime()).toList();
+        List<com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.NameAndAvailability> saved =
+                storage.listNamesWithAvailability(record -> true);
+        List<String> savedNames = saved.stream()
+                .map(com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.NameAndAvailability::name).toList();
+        List<Long> fullMtimes = saved.stream()
+                .map(com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.NameAndAvailability::fullMtime).toList();
+        List<Long> smallMtimes = saved.stream()
+                .map(com.github.cerealklla.blueprynts.blueprint.BlueprintStorage.NameAndAvailability::smallMtime).toList();
         PacketDistributor.sendToPlayer(player, new OpenConstructionSiteScreenPayload(
                 pos,
                 site.phase().name(),

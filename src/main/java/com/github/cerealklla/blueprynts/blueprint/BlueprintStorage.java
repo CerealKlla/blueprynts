@@ -84,6 +84,30 @@ public final class BlueprintStorage {
     }
 
     /**
+     * Same selection as {@link #listNames(java.util.function.Predicate)}, but also resolves each
+     * match's preview mtimes in the same single directory walk, instead of a caller looping over the
+     * returned names and calling {@link #previewAvailability(String)} per name -- that used to mean
+     * one extra full-store walk+decode *per Blueprint*, making every open of a picker screen O(N^2)
+     * in the number of saved Blueprints (real bug, 2026-10-11: a Construction Site right-click taking
+     * several seconds with the suite's accumulated test content).
+     */
+    public List<NameAndAvailability> listNamesWithAvailability(java.util.function.Predicate<BlueprintRecord> filter) {
+        List<NameAndAvailability> results = new ArrayList<>();
+        forEachRecord((path, record) -> {
+            if (filter.test(record)) {
+                results.add(new NameAndAvailability(
+                        record.name(),
+                        mtimeOrMissing(previewPath(path, "full")),
+                        mtimeOrMissing(previewPath(path, "small"))));
+            }
+        });
+        return results;
+    }
+
+    public record NameAndAvailability(String name, long fullMtime, long smallMtime) {
+    }
+
+    /**
      * Whether BluepryntImager (a separate standalone program, no shared dependency -- see its own
      * context repo) has generated preview images for this Blueprint yet, and how fresh they are.
      * {@code -1} means missing. The two variants are always generated together by that program, but

@@ -137,10 +137,11 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
         }
         net.minecraft.resources.Identifier finalZoneTypeId = matchZoneTypeId;
         BlueprintStorage storage = BlueprintStorage.get();
-        java.util.List<String> names = storage.listNames(record ->
+        java.util.List<BlueprintStorage.NameAndAvailability> matches = storage.listNamesWithAvailability(record ->
                 record.blueprintTypeId().equals(finalZoneTypeId) && record.tier() == tier);
-        java.util.List<Long> fullMtimes = names.stream().map(name -> storage.previewAvailability(name).fullMtime()).toList();
-        java.util.List<Long> smallMtimes = names.stream().map(name -> storage.previewAvailability(name).smallMtime()).toList();
+        java.util.List<String> names = matches.stream().map(BlueprintStorage.NameAndAvailability::name).toList();
+        java.util.List<Long> fullMtimes = matches.stream().map(BlueprintStorage.NameAndAvailability::fullMtime).toList();
+        java.util.List<Long> smallMtimes = matches.stream().map(BlueprintStorage.NameAndAvailability::smallMtime).toList();
         return new OpenConstructionBoxPickerPayload(boxPos, names, fullMtimes, smallMtimes);
     }
 }
