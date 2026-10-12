@@ -48,8 +48,19 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         super(type, containerId);
         this.box = box;
         this.fundingContainer = new SimpleContainer(RESOURCE_COUNT);
-        this.canManage = box != null && box.getLevel() instanceof ServerLevel serverLevel
-                && com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(serverLevel, box.getBlockPos(), inventory.player.getUUID());
+        boolean computedCanManage = false;
+        if (box != null && box.getLevel() instanceof ServerLevel serverLevel) {
+            BlockPos checkPos = resolvePermissionCheckPos(box);
+            computedCanManage = com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(
+                    serverLevel, checkPos, inventory.player.getUUID());
+            // Temporary diagnostic (2026-10-12, real report: "I'm not seeing the construction site
+            // button" on a fully-funded box) -- remove once the real cause is confirmed live.
+            com.github.cerealklla.blueprynts.BluepryntsMod.LOGGER.info(
+                    "[CanManageDebug] box={} plotArea={} checkPos={} player={} settlemyntsLoaded={} -> canManage={}",
+                    box.getBlockPos(), box.plotArea() != null, checkPos, inventory.player.getUUID(),
+                    com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.isLoaded(), computedCanManage);
+        }
+        this.canManage = computedCanManage;
         this.data = new SyncedData();
         addDataSlots(data);
         layoutSlots(inventory);
@@ -58,6 +69,32 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     /** Client-side reconstruction (see {@code registration.ModMenus}) -- no real box to read from. */
     public ConstructionBoxMenu(MenuType<?> type, int containerId, Inventory inventory) {
         this(type, containerId, inventory, null);
+    }
+
+    /**
+     * The box's own {@code getBlockPos()} is deliberately placed just outside the plot's buildable
+     * area (Settlemynts auto-places it "just outside the buildable area" at Finalize), so resolving
+     * "which plot manages this box" from that position directly finds no plot at all, denying both
+     * this screen's own Manage button AND every one of {@code BluepryntsMod}'s four server-side
+     * permission re-checks (Tier Picker, Ledger, Reposition Building, Reposition Supply Box) to
+     * everyone, including the plot's rightful Mayor/Owner -- a real live-reported bug (2026-10-12:
+     * "I'm not seeing the construction site button" on a fully-funded box). {@link
+     * com.github.cerealklla.blueprynts.api.PlotArea#anyInteriorPoint()} gives a position genuinely
+     * inside the plot polygon instead, when the box has one recorded; falls back to the box's own
+     * position only if it somehow has none (e.g. a box that predates `plotArea` being recorded at
+     * all), same as this always worked before this fix. Public so every
+     * {@code SettlemyntsPermissionBridge.canManage} call site can share one resolution, not just
+     * this menu's own constructor.
+     */
+    public static BlockPos resolvePermissionCheckPos(ConstructionBoxBlockEntity box) {
+        if (box.plotArea() != null) {
+            var interior = box.plotArea().anyInteriorPoint();
+            if (interior.isPresent()) {
+                int[] xz = interior.get();
+                return new BlockPos(xz[0], box.getBlockPos().getY(), xz[1]);
+            }
+        }
+        return box.getBlockPos();
     }
 
     // Must match ConstructionBoxScreen's own layout constants exactly (funding-slot y, and the

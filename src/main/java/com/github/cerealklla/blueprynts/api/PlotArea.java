@@ -87,4 +87,25 @@ public final class PlotArea {
         }
         return interior[lz * width + lx];
     }
+
+    /**
+     * Any one world-space (x, z) that's actually inside this plot -- added 2026-10-12 for {@code
+     * construction.ConstructionBoxMenu}'s own permission check, which needs a position genuinely
+     * inside the plot polygon to resolve "which plot is this" through Settlemynts' {@code
+     * api.Settlemynts#canManagePlotAt}. The Construction Box's own block position is deliberately
+     * placed just outside the plot's buildable area (see Settlemynts' own CLAUDE.md, "Finalize now
+     * auto-places a real Blueprynts Building Supply Box... just outside the buildable area"), so
+     * using it directly resolves no plot at all and silently denies manage access to everyone,
+     * including the plot's own Mayor/Owner -- a real live-reported bug, not a hypothetical.
+     */
+    public java.util.Optional<int[]> anyInteriorPoint() {
+        for (int lz = 0; lz < height; lz++) {
+            for (int lx = 0; lx < width; lx++) {
+                if (interior[lz * width + lx]) {
+                    return java.util.Optional.of(new int[] { minX + lx, minZ + lz });
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
 }

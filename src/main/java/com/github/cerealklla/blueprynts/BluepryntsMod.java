@@ -61,7 +61,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 public class BluepryntsMod {
 
     public static final String MODID = "blueprynts";
-    private static final Logger LOGGER = LogUtils.getLogger();
+    public static final Logger LOGGER = LogUtils.getLogger();
 
     public BluepryntsMod(IEventBus modEventBus) {
         ModBlocks.BLOCKS.register(modEventBus);
@@ -194,7 +194,7 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
-                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu.resolvePermissionCheckPos(box), player.getUUID())) {
                         player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
@@ -208,7 +208,7 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
-                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu.resolvePermissionCheckPos(box), player.getUUID())) {
                         player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
@@ -282,7 +282,7 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
-                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu.resolvePermissionCheckPos(box), player.getUUID())) {
                         player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
@@ -342,7 +342,7 @@ public class BluepryntsMod {
                             || !(level.getBlockEntity(payload.boxPos()) instanceof ConstructionBoxBlockEntity box)) {
                         return;
                     }
-                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, payload.boxPos(), player.getUUID())) {
+                    if (!com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(level, com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu.resolvePermissionCheckPos(box), player.getUUID())) {
                         player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
