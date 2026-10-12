@@ -43,11 +43,21 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     // Must match ConstructionBoxMenu#layoutSlots' own funding-slot y and player-inventory y exactly.
     private static final int TEXT_START_Y = 40;
     private static final int TEXT_LINE_HEIGHT = 10;
-    // Bumped 132 -> 156 (2026-10-09) for the third "Change Blueprint" button, then 156 -> 180
-    // (2026-10-12) for the fourth "View Ledger" button -- the window height wasn't grown when that
-    // button was added, so it rendered on top of the player-inventory panel (real report: title/
-    // button text overlapping inventory item icons).
-    private static final int PLAYER_INV_Y = 180;
+    private static final int BUTTON_COUNT = 4; // Reposition Building / Reposition Supply Box / Change Blueprint / View Ledger
+    private static final int FIRST_BUTTON_OFFSET = 14; // first button's y, relative to statusY
+    private static final int BUTTON_SPACING = 24; // y delta between each button (matches init()'s own +14/+38/+62/+86 progression)
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int PANEL_MARGIN = 12; // real clearance between the last button's bottom and the inventory panel
+    // Hand-incremented by a flat +24 each time a button was added (132 -> 156 -> 180) kept landing
+    // short of the real inventory-panel position by a few pixels every time -- real 2026-10-12 report
+    // (the View Ledger button still visibly overlapped the inventory after the 156 -> 180 bump) traced
+    // to never actually re-deriving this from the real button layout, just guessing the same delta
+    // used for the previous button. Computed for real now, so adding/removing a button can't silently
+    // reintroduce this.
+    private static final int STATUS_Y = TEXT_START_Y + GenericResource.values().length * TEXT_LINE_HEIGHT + 4;
+    private static final int LAST_BUTTON_BOTTOM = STATUS_Y + FIRST_BUTTON_OFFSET + (BUTTON_COUNT - 1) * BUTTON_SPACING + BUTTON_HEIGHT;
+    // +14 compensates for extractBackground's own "yo + PLAYER_INV_Y - 14" panel-position offset.
+    private static final int PLAYER_INV_Y = LAST_BUTTON_BOTTOM + PANEL_MARGIN + 14;
 
     public ConstructionBoxScreen(ConstructionBoxMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, 176, PLAYER_INV_Y + 76 + 6);
@@ -58,29 +68,28 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     protected void init() {
         super.init();
         int buttonWidth = 150;
-        int statusY = TEXT_START_Y + GenericResource.values().length * TEXT_LINE_HEIGHT + 4;
         int buttonX = leftPos + (imageWidth - buttonWidth) / 2;
         // Active whenever a Blueprint is bound at all -- this screen only ever opens for a bound
         // box, and "Reposition Building" now works both before and after funding completes (see
         // ConstructionBoxBlockEntity#setPendingAnchor's own doc).
         addRenderableWidget(Button.builder(Component.literal("Reposition Building"), b -> send(new RepositionBuildingPayload(menu.boxPos())))
-                .bounds(buttonX, topPos + statusY + 14, buttonWidth, 20)
+                .bounds(buttonX, topPos + STATUS_Y + FIRST_BUTTON_OFFSET, buttonWidth, BUTTON_HEIGHT)
                 .build());
         addRenderableWidget(Button.builder(Component.literal("Reposition Supply Box"), b -> send(new RepositionSupplyBoxPayload(menu.boxPos())))
-                .bounds(buttonX, topPos + statusY + 38, buttonWidth, 20)
+                .bounds(buttonX, topPos + STATUS_Y + FIRST_BUTTON_OFFSET + BUTTON_SPACING, buttonWidth, BUTTON_HEIGHT)
                 .build());
         // "Change Blueprint" (added 2026-10-09) -- the only way to pick/rebuild at a different,
         // already-unlocked Tier (or just a different Blueprint of the same Tier). Opens the new
         // Tier-picker step first, see ConstructionBoxTierPickerScreen's own doc.
         addRenderableWidget(Button.builder(Component.literal("Change Blueprint"), b -> send(new RequestConstructionBoxTierPickerPayload(menu.boxPos())))
-                .bounds(buttonX, topPos + statusY + 62, buttonWidth, 20)
+                .bounds(buttonX, topPos + STATUS_Y + FIRST_BUTTON_OFFSET + 2 * BUTTON_SPACING, buttonWidth, BUTTON_HEIGHT)
                 .build());
         // "View Ledger" (added 2026-10-12) -- a read-only record of every purchase/sale touching
         // this plot's Shop, see LedgerEntry's own doc. Opens a real BookViewScreen built fresh from
         // the box's own state, never a real held item.
         addRenderableWidget(Button.builder(Component.literal("View Ledger"),
                 b -> send(new com.github.cerealklla.blueprynts.construction.RequestLedgerPayload(menu.boxPos())))
-                .bounds(buttonX, topPos + statusY + 86, buttonWidth, 20)
+                .bounds(buttonX, topPos + STATUS_Y + FIRST_BUTTON_OFFSET + 3 * BUTTON_SPACING, buttonWidth, BUTTON_HEIGHT)
                 .build());
     }
 
@@ -117,7 +126,7 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
             int lineY = topPos + TEXT_START_Y + i * TEXT_LINE_HEIGHT;
             graphics.text(font, text, textX, lineY, menu.remaining(resource) <= 0 ? 0xFF55FF55 : 0xFFFFFFFF);
         }
-        int statusY = topPos + TEXT_START_Y + resources.length * TEXT_LINE_HEIGHT + 4;
+        int statusY = topPos + STATUS_Y;
         if (!menu.blueprintPlaced()) {
             String status = "Construction progress: " + menu.fundedPercent() + "%";
             int color = menu.fundedPercent() >= 100 ? 0xFF55FF55 : 0xFFAAAAAA;
