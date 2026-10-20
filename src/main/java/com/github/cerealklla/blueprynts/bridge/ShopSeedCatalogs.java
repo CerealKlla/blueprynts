@@ -69,6 +69,11 @@ public final class ShopSeedCatalogs {
     private static final int EXOTIC_PLANK_PRICE = 3;
     private static final int LOG_STOCK = 64;
     private static final int PLANK_STOCK = 64;
+    private static final int STICK_PRICE = 1;
+    private static final int STICK_STOCK = 64;
+    private static final int LOCAL_APPLE_PRICE = 2;
+    private static final int EXOTIC_APPLE_PRICE = 4;
+    private static final int APPLE_STOCK = 16;
 
     private static final List<String> WOOD_SPECIES = List.of(
             "oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "pale_oak");
@@ -85,6 +90,16 @@ public final class ShopSeedCatalogs {
                     ShopResource.ofItem(Identifier.withDefaultNamespace(species + "_planks")),
                     local ? LOCAL_PLANK_PRICE : EXOTIC_PLANK_PRICE, PLANK_STOCK));
         }
+        // Sticks and Apples (added 2026-10-21, real request: "it should list anything a tree can drop
+        // automatically") -- the only other real items a Lumberjack's own harvest can ever produce,
+        // via its leaf-loot-table roll (see settlemynts' lumberyard.LumberjackWorkGoal#harvest's own
+        // doc: every leaf type can drop a Stick, Oak specifically can also drop an Apple; a dropped
+        // Sapling is deliberately discarded there, never obtainable this way, so it's not listed
+        // here either). Stick has no species concept, one flat listing; Apple gets the same local/
+        // exotic split as logs/planks, keyed off whether this plot's own biome is genuinely Oak.
+        listings.add(SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("stick")), STICK_PRICE, STICK_STOCK));
+        listings.add(SeedListing.ofResource(ShopResource.ofItem(Identifier.withDefaultNamespace("apple")),
+                localSpecies.equals("oak") ? LOCAL_APPLE_PRICE : EXOTIC_APPLE_PRICE, APPLE_STOCK));
         return listings;
     }
 
