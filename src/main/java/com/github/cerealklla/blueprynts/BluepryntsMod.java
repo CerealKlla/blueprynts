@@ -212,6 +212,15 @@ public class BluepryntsMod {
                         player.sendSystemMessage(Component.literal("You don't have permission to manage this plot."));
                         return;
                     }
+                    // Temporary instrumentation (2026-10-21) -- real report: a ledger entry seemingly
+                    // missing on "the last page," then later entries with old day-stamps appearing on
+                    // that same last page -- suspected to be pagination-vs-trimming confusion, not a
+                    // missing-write bug, but verifying with the real underlying list instead of
+                    // guessing from a cropped book page. Dumps every entry with its real gameTime.
+                    LOGGER.info("[LEDGER-DEBUG] box at {} has {} raw ledger entries:", payload.boxPos(), box.ledger().size());
+                    for (com.github.cerealklla.blueprynts.construction.LedgerEntry entry : box.ledger()) {
+                        LOGGER.info("[LEDGER-DEBUG]   gameTime={} day={} line={}", entry.gameTime(), entry.gameTime() / 24000L, entry.line());
+                    }
                     net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                             com.github.cerealklla.blueprynts.construction.ConstructionBoxBlock.buildLedgerPages(box));
                 });
