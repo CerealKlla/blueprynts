@@ -56,6 +56,9 @@ public final class SettlemyntsZoneBridge {
             case "recallcinite_stone" -> Blocks.BLACK_STAINED_GLASS;
             // Mineshaft, 2026-10-11 -- blue, an ore/mining-coded color not already claimed above.
             case "mineshaft" -> Blocks.BLUE_STAINED_GLASS;
+            // Watch Tower, 2026-10-22 -- green, the one built-in stained glass color not already
+            // claimed above (LIME is Farm's).
+            case "watch_tower" -> Blocks.GREEN_STAINED_GLASS;
             default -> Blocks.LIGHT_GRAY_STAINED_GLASS;
         };
     }

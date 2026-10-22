@@ -62,7 +62,12 @@ public enum TierSpec {
             Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "recallcinite_stone"),
             new int[][] {{0, 3}, {1, 5}, {2, 6}, {4, 8}, {5, 9}},
             Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "mineshaft"),
-            new int[][] {{3, 4}, {4, 4}, {5, 5}, {7, 5}, {8, 6}});
+            new int[][] {{3, 4}, {4, 4}, {5, 5}, {7, 5}, {8, 6}},
+            // Watch Tower (2026-10-22, explicit user spec: "5x5x10 -> 9x9x-5 to 20") -- {0,10} at
+            // Tier 1 up to {5,20} at Tier 5, three middle tiers interpolated, flagged tunable like
+            // every other entry in this table.
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "watch_tower"),
+            new int[][] {{0, 10}, {1, 13}, {3, 15}, {4, 18}, {5, 20}});
 
     /** Type-aware height above ground -- checks {@link #HEIGHT_OVERRIDE_BY_TIER} first, falling back to this Tier's own shared {@link #heightAboveGround()}. */
     public static int heightAboveGround(BlueprintType type, TierSpec tier) {

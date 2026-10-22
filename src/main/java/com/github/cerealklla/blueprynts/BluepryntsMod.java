@@ -157,6 +157,11 @@ public class BluepryntsMod {
         // auto-spawns while it stays NPC-owned). Its asymmetric per-tier footprint/depth (5x5/-3/+4 at
         // Tier 1 up to 8x8/-8/+6 at Tier 5) lives in SlabBudget/TierSpec's own override maps, not here.
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "mineshaft"), "Mineshaft", 1.0));
+        // Watch Tower (explicit user request, 2026-10-22) -- a passive-illumination Plot Type (real
+        // light via a fuel-burning Beacon block, see Settlemynts' own CLAUDE.md for the full
+        // mechanic). Asymmetric per-tier footprint/height (5x5/0/+10 at Tier 1 up to 9x9/-5/+20 at
+        // Tier 5) lives in TierSpec's own override map, not here.
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "watch_tower"), "Watch Tower", 1.0));
 
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.
