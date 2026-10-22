@@ -28,6 +28,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -448,10 +449,18 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     /**
      * Called once, right when a Blueprint is (first bound, or rebound to a different one via
-     * "Change Blueprint") -- {@code cost} is the Blueprint's own real material list, computed by
-     * {@link com.github.cerealklla.blueprynts.blueprint.BlueprintMaterialCost}. Never recalculated
-     * afterward -- a later re-derivation (e.g. the Blueprint file itself changing) doesn't
-     * retroactively change an in-progress box's own already-agreed cost.
+     * "Change Blueprint") -- {@code cost} is the Blueprint's own real material list ({@code
+     * BlueprintRecord#resources()}, already computed by {@code blueprint.BlueprintResources
+     * #computeFrom} at Save time). Never recalculated afterward -- a later re-derivation (e.g. the
+     * Blueprint file itself changing) doesn't retroactively change an in-progress box's own
+     * already-agreed cost.
+     *
+     * <p><b>Refunds whatever was already supplied before resetting it</b> (added 2026-10-22,
+     * explicit user spec: "the resources for that blueprint should be dumped into storage boxes
+     * within the plot... any excess should be placed in a pile on top of the construction site
+     * box... only the resources actually used so far" -- i.e. {@link #supplied}, not the old {@link
+     * #required}) -- see {@link #refundSuppliedMaterials}. A no-op the first time a box is ever
+     * bound, since nothing's been supplied yet.
      *
      * <p>Also resets {@link #everCompleted} -- real bug fixed 2026-10-22: that flag is a historical
      * "was the currently-bound Blueprint ever fully built" latch, but used to only ever get set
@@ -462,11 +471,56 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      * {@code api.Blueprynts#getConstructionBoxStatus}, and {@code BuildingLocatorItem}'s own
      * now-fixed "instantly completes on reposition" bug).
      */
-    public void initializeRequirements(Map<Item, Integer> cost) {
+    public void initializeRequirements(ServerLevel level, Map<Item, Integer> cost) {
+        refundSuppliedMaterials(level);
         required = new LinkedHashMap<>(cost);
         supplied = new LinkedHashMap<>();
         everCompleted = false;
         setChanged();
+    }
+
+    /**
+     * Converts {@link #supplied} into real stacks (chunked to each item's own max stack size),
+     * deposits as much as possible into the owning plot's own boxes for free, and piles whatever
+     * doesn't fit directly on top of this box -- "only the resources actually used so far," not the
+     * Blueprint's full new cost. A no-op if nothing's currently supplied. If this box's plot
+     * identity isn't known (see this class's own doc), everything piles on top instead of being
+     * deposited -- same degrade-gracefully shape as {@link #pullFromPlotAndSync}.
+     */
+    private void refundSuppliedMaterials(ServerLevel level) {
+        if (supplied.isEmpty()) {
+            return;
+        }
+        List<ItemStack> stacks = new ArrayList<>();
+        for (Map.Entry<Item, Integer> entry : supplied.entrySet()) {
+            int remaining = entry.getValue();
+            int maxStack = entry.getKey().getDefaultMaxStackSize();
+            while (remaining > 0) {
+                int take = Math.min(remaining, maxStack);
+                stacks.add(new ItemStack(entry.getKey(), take));
+                remaining -= take;
+            }
+        }
+        List<ItemStack> leftover = (settlementCoreId != null && plotId != null)
+                ? SettlemyntsPlotBoxBridge.depositIntoPlot(level, plotId, stacks)
+                : stacks;
+        if (!leftover.isEmpty()) {
+            pileOnTop(level, leftover);
+        }
+    }
+
+    /** Drops {@code stacks} directly above this box -- a Yconomics Loot Bag if that's loaded (same precedent as {@code construction.SiteTerrainOps#spawnRefundPile}'s own refund pile), a plain scattered {@code ItemEntity} otherwise. */
+    private void pileOnTop(ServerLevel level, List<ItemStack> stacks) {
+        BlockPos pos = getBlockPos();
+        net.minecraft.world.phys.Vec3 pileCenter = new net.minecraft.world.phys.Vec3(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
+        boolean yconomics = net.neoforged.fml.ModList.get().isLoaded("yconomics");
+        for (ItemStack stack : stacks) {
+            if (yconomics) {
+                com.github.cerealklla.blueprynts.bridge.YconomicsLootBridge.depositOrScatter(level, pileCenter, stack);
+            } else {
+                level.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(level, pileCenter.x, pileCenter.y, pileCenter.z, stack));
+            }
+        }
     }
 
     public boolean isFullyFunded() {

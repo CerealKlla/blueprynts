@@ -1,5 +1,6 @@
 package com.github.cerealklla.blueprynts.bridge;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -7,17 +8,20 @@ import com.github.cerealklla.settlemynts.api.Settlemynts;
 
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
 
 /**
- * The two Settlemynts-facing operations {@code construction.ConstructionBoxBlockEntity}'s own
+ * The Settlemynts-facing operations {@code construction.ConstructionBoxBlockEntity}'s own
  * event-driven funding needs (added 2026-10-22, see that class's own doc for the funding-model
  * rework this is part of) -- withdrawing already-available materials straight out of the owning
- * plot's own boxes for free, and pushing whatever's still missing to that plot's Planned Inventory
- * wishlist so the existing nightly inter-plot-trading pass buys it from the settlement economy. Same
- * self-guarding-per-method isolation convention as {@code SettlemyntsPermissionBridge} -- every
- * method here checks {@link #isLoaded()} itself, so a Settlemynts-less server simply never gets any
- * automatic funding (a box still funds fully from manual player deposits, same as always).
+ * plot's own boxes for free, pushing whatever's still missing to that plot's Planned Inventory
+ * wishlist so the existing nightly inter-plot-trading pass buys it from the settlement economy, and
+ * (added the same day, for the "Change Blueprint" refund) depositing real stacks back into the
+ * plot's own boxes. Same self-guarding-per-method isolation convention as {@code
+ * SettlemyntsPermissionBridge} -- every method here checks {@link #isLoaded()} itself, so a
+ * Settlemynts-less server simply never gets any automatic funding (a box still funds fully from
+ * manual player deposits, same as always) and a refund just piles entirely on top of the box.
  */
 public final class SettlemyntsPlotBoxBridge {
 
@@ -38,5 +42,10 @@ public final class SettlemyntsPlotBoxBridge {
         if (isLoaded()) {
             Settlemynts.setConstructionMaterialTargets(level, settlementCoreId, plotId, missing);
         }
+    }
+
+    /** Deposits {@code stacks} into whichever of {@code plotId}'s own boxes have room -- returns whatever didn't fit (every stack, unmodified, if Settlemynts isn't loaded at all). */
+    public static List<ItemStack> depositIntoPlot(ServerLevel level, UUID plotId, List<ItemStack> stacks) {
+        return isLoaded() ? Settlemynts.depositItemsIntoPlot(level, plotId, stacks) : stacks;
     }
 }
