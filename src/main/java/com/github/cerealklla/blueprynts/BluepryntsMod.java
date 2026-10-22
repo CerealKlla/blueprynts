@@ -160,8 +160,11 @@ public class BluepryntsMod {
         // Watch Tower (explicit user request, 2026-10-22) -- a passive-illumination Plot Type (real
         // light via a fuel-burning Beacon block, see Settlemynts' own CLAUDE.md for the full
         // mechanic). Asymmetric per-tier footprint/height (5x5/0/+10 at Tier 1 up to 9x9/-5/+20 at
-        // Tier 5) lives in TierSpec's own override map, not here.
-        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "watch_tower"), "Watch Tower", 1.0));
+        // Tier 5) lives in TierSpec's own override map, not here. Made npcOwnedOnly=true the same day
+        // (real correction: the fuel-burning upkeep only makes sense as an NPC-funded settlement
+        // utility, same shape as Guardhouse) -- Settlemynts' own finalizePlot already enforces this
+        // generically off the bridged ZoneType, no new per-type logic needed there.
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "watch_tower"), "Watch Tower", 1.0, true));
 
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.
