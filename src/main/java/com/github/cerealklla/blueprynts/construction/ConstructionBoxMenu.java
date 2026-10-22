@@ -34,7 +34,8 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private static final int BLUEPRINT_PLACED_INDEX = 4;
     private static final int EVER_COMPLETED_INDEX = 5;
     private static final int CAN_MANAGE_INDEX = 6;
-    private static final int DATA_SIZE = 7;
+    private static final int LEGACY_FUNDING_DATA_LOST_INDEX = 7;
+    private static final int DATA_SIZE = 8;
 
     private final ConstructionBoxBlockEntity box; // null on the client's own reconstructed instance
     private final Container fundingContainer;
@@ -159,6 +160,11 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         return data.get(CAN_MANAGE_INDEX) != 0;
     }
 
+    /** {@code true} if this box's saved funding data couldn't be read at all -- see {@code ConstructionBoxBlockEntity#legacyFundingDataLost}'s own doc. Gates a distinct status message on {@code client.ConstructionBoxScreen} instead of a misleading funded percentage. */
+    public boolean legacyFundingDataLost() {
+        return data.get(LEGACY_FUNDING_DATA_LOST_INDEX) != 0;
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         // Shift-clicking the funnel row does nothing special (it's a funnel, not real storage --
@@ -215,6 +221,9 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
             }
             if (index == EVER_COMPLETED_INDEX) {
                 return box.everCompleted() ? 1 : 0;
+            }
+            if (index == LEGACY_FUNDING_DATA_LOST_INDEX) {
+                return box.legacyFundingDataLost() ? 1 : 0;
             }
             return canManage ? 1 : 0;
         }

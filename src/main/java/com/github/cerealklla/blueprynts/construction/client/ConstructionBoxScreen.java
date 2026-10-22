@@ -108,8 +108,15 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         if (!menu.blueprintPlaced()) {
             int statusY = topPos + STATUS_Y;
-            String status = "Construction progress: " + menu.fundedPercent() + "%";
-            int color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
+            String status;
+            int color;
+            if (menu.legacyFundingDataLost()) {
+                status = "Funding data unreadable -- use Change Blueprint to recompute";
+                color = 0xFFFF5555;
+            } else {
+                status = "Construction progress: " + menu.fundedPercent() + "%";
+                color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
+            }
             graphics.text(font, status, leftPos + (imageWidth - font.width(status)) / 2, statusY, color);
         }
     }

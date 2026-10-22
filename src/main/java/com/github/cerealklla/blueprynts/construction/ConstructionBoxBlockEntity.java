@@ -135,6 +135,14 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     private Map<Item, Integer> supplied = new LinkedHashMap<>();
     private boolean everCompleted;
 
+    // Not persisted -- re-derived fresh every load (see loadAdditional's own doc) and always false
+    // right after a real initializeRequirements call, so there's nothing to save. True only for a
+    // box loaded with a bound Blueprint whose Required/Supplied NBT failed to decode (stale/
+    // incompatible data from an older funding-model version) -- freezes isFundable() until an
+    // explicit "Change Blueprint" rebind recomputes everything cleanly, rather than risking
+    // fundedPercent() trivially reading "100% of nothing required" and auto-completing for free.
+    private boolean legacyFundingDataLost;
+
     // Suspends attemptCompletion entirely between "Reposition Building" clearing whatever was
     // standing and the player actually placing a new anchor with the Locator -- a real bug,
     // 2026-09-29: without this, a re-check resumed building at the *old* anchor within about a
@@ -373,6 +381,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         this.required = new LinkedHashMap<>(source.required);
         this.supplied = new LinkedHashMap<>(source.supplied);
         this.everCompleted = source.everCompleted;
+        this.legacyFundingDataLost = source.legacyFundingDataLost;
         this.repositionPending = source.repositionPending;
         this.pendingAnchor = source.pendingAnchor;
         this.pendingFacing = source.pendingFacing;
@@ -418,7 +427,12 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     /** True while this box is bound to a Blueprint but not yet built and not mid-Reposition -- the same state {@link #attemptCompletion} checks before touching funding. */
     public boolean isFundable() {
-        return placedBlueprintName != null && !blueprintPlaced && !repositionPending;
+        return placedBlueprintName != null && !blueprintPlaced && !repositionPending && !legacyFundingDataLost;
+    }
+
+    /** {@code true} if this box's saved funding data couldn't be read at all (stale/incompatible format) -- see {@link #legacyFundingDataLost}'s own doc. Fixed by an explicit "Change Blueprint" rebind. */
+    public boolean legacyFundingDataLost() {
+        return legacyFundingDataLost;
     }
 
     /** 0 if {@code item} isn't part of this box's requirements at all. */
@@ -476,6 +490,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         required = new LinkedHashMap<>(cost);
         supplied = new LinkedHashMap<>();
         everCompleted = false;
+        legacyFundingDataLost = false;
         setChanged();
     }
 
@@ -666,8 +681,24 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         tier = input.getIntOr("Tier", 0);
         allowedTier = input.getIntOr("AllowedTier", 1);
         repositionPending = input.getBooleanOr("RepositionPending", false);
-        required = fromIdMap(input.read("Required", ITEM_AMOUNTS_CODEC).orElse(Map.of()));
-        supplied = fromIdMap(input.read("Supplied", ITEM_AMOUNTS_CODEC).orElse(Map.of()));
+        Optional<Map<Identifier, Integer>> requiredRead = input.read("Required", ITEM_AMOUNTS_CODEC);
+        Optional<Map<Identifier, Integer>> suppliedRead = input.read("Supplied", ITEM_AMOUNTS_CODEC);
+        required = fromIdMap(requiredRead.orElse(Map.of()));
+        supplied = fromIdMap(suppliedRead.orElse(Map.of()));
+        // Real incident, 2026-10-22, caught on Production immediately after the funding-model
+        // rework shipped: a box saved under the old int[]-indexed GenericResource format (e.g.
+        // `Required: [100,60]`) fails to decode against the new Map<Identifier,Integer> codec --
+        // logged as a "Serialization errors" warning, not a crash, but `read` falls back to the
+        // same empty Optional a genuinely-never-bound box would also produce, which would otherwise
+        // make `fundedPercent()` trivially report 100% (nothing required) the instant anything next
+        // touched this box -- `attemptCompletion` would then paste the *entire* remaining structure
+        // for free, silently discarding whatever real funding progress existed. A box can only ever
+        // reach this `loadAdditional` with `placedBlueprintName != null` if `initializeRequirements`
+        // already ran for it at least once, which always writes a real `Required`/`Supplied` tag --
+        // so for such a box, either read coming back empty unambiguously means stale/incompatible
+        // data, never "nothing was ever required." Freezes the box (via `isFundable()`) until an
+        // explicit "Change Blueprint" rebind recomputes everything cleanly -- never silently guessed.
+        legacyFundingDataLost = placedBlueprintName != null && (requiredRead.isEmpty() || suppliedRead.isEmpty());
         ledger.clear();
         ledger.addAll(input.read("Ledger", LedgerEntry.CODEC.listOf()).orElse(List.of()));
     }
