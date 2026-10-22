@@ -1,7 +1,7 @@
 package com.github.cerealklla.blueprynts.construction;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -10,7 +10,7 @@ import java.util.UUID;
 
 import com.github.cerealklla.blueprynts.api.BuildableArea;
 import com.github.cerealklla.blueprynts.api.PlotArea;
-import com.github.cerealklla.blueprynts.blueprint.GenericResource;
+import com.github.cerealklla.blueprynts.bridge.SettlemyntsPlotBoxBridge;
 import com.github.cerealklla.blueprynts.registration.ModBlockEntities;
 import com.github.cerealklla.blueprynts.registration.ModMenus;
 import com.mojang.serialization.Codec;
@@ -19,6 +19,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -26,6 +27,7 @@ import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,11 +42,42 @@ import net.minecraft.world.level.storage.ValueOutput;
  * *authoring* tool; this one is the materials-funding reservoir for a structure a plot already
  * knows the footprint of.
  *
+ * <p><b>Funding model rebuilt 2026-10-22</b> (explicit user spec, replacing the 2026-09-29 "Planned:
+ * Passive Construction & Funding" design) -- {@link #required}/{@link #supplied} are now keyed by
+ * the real exact {@link Item} the bound Blueprint actually uses (computed once at bind time by
+ * {@link com.github.cerealklla.blueprynts.blueprint.BlueprintMaterialCost}), not an abstract
+ * {@code GenericResource} (Wood/Stone) category sourced from a hand-tuned Settlemynts Zone+Tier cost
+ * table -- "attempt to buy the components which make up the blueprint." There is also no more
+ * elapsed-time construction gate ({@code minTimeTicks}/{@code maxTimeTicks}/{@code
+ * accumulatedTimeTicks} all removed) -- "no longer need the 'NPC owned buildings take longer to
+ * build' concept"; construction progress is now purely {@link #fundedPercent()}, so a box that gets
+ * fully funded (by any combination of the plot's own stock, the settlement economy, or a player's
+ * own deposit) paste immediately. This also means the box never needs a {@code BlockEntityTicker} at
+ * all any more -- see {@code ConstructionBoxBlock}'s own doc (standing rule, 2026-10-22: avoid
+ * non-event-driven chron jobs wherever a real event can trigger the same work instead).
+ *
+ * <p>Funding itself is now layered, event-driven, same precedent as {@code
+ * watchtower.WatchTowerBeaconBlockEntity}'s fuel: (1) a manual player deposit (drag or shift-click)
+ * is used immediately, same as always; (2) {@link #pullFromPlotAndSync} -- called once right after
+ * binding, and again any time Settlemynts reports the owning plot's own boxes changed -- withdraws
+ * whatever it can of the still-missing items directly from the plot's own storage, for free; (3)
+ * whatever's still missing after that is pushed to the plot's Planned Inventory (flagged {@code
+ * derivedFromConstructionBox} on the Settlemynts side) so the existing nightly inter-plot-trading
+ * pass buys it from the settlement economy automatically, at zero new purchasing code written here
+ * or in Settlemynts -- "leverage the existing pipeline entirely for the purchasing." {@link
+ * #settlementCoreId}/{@link #plotId} (new fields, set once at creation by Settlemynts' own {@code
+ * bridge.BlueprintsConstructionBridge#placeConstructionBox}, which already knows both at that
+ * moment) are what let this box reach into Settlemynts for both of those steps directly by plot
+ * identity -- deliberately NOT resolved from this box's own world position via {@code
+ * api.Settlemynts#findPlotAt}, since the box is placed "just outside the plot's buildable area"
+ * (see {@code ConstructionBoxMenu#resolvePermissionCheckPos}'s own doc for the exact same gotcha
+ * already found once for permission checks) and would resolve to "no plot" there. {@code null} for
+ * a box created before this pair of fields existed -- the pull/sync steps are silent no-ops for
+ * those (a real, accepted migration gap, not silently guessed around; flagged in decisions.md).
+ *
  * <p><b>v1 scope, 2026-09-29</b>: only the identity piece -- {@link #constructionId()}, minted once
  * at creation and never reassigned -- so a box can be referenced from outside without needing its
- * chunk loaded first (see {@link ConstructionBoxIndex}). Required/Supplied material tracking,
- * status, and timing are deliberately NOT implemented yet (real follow-up work, not stubbed with
- * placeholder data) -- see the plan this shipped under.
+ * chunk loaded first (see {@link ConstructionBoxIndex}).
  *
  * <p>Gained {@link #zoneTypeId()} and {@link #blueprintPlaced()} the same day, per user request: the
  * picker this box opens is constrained to Blueprint Types matching the owning plot's own Zone Type
@@ -76,6 +109,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
             Codec.INT.fieldOf("max_z").forGetter(BuildableArea::maxZ)
     ).apply(i, BuildableArea::new));
 
+    private static final Codec<Map<Identifier, Integer>> ITEM_AMOUNTS_CODEC = Codec.unboundedMap(Identifier.CODEC, Codec.INT);
+
     private UUID constructionId;
     private Identifier zoneTypeId;
     private boolean blueprintPlaced;
@@ -84,26 +119,27 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     private PlotArea plotArea;
     private TerrainSnapshot removalSnapshot = new TerrainSnapshot();
 
-    // Funding tally (design-document.md's "Planned: Passive Construction & Funding," captured
-    // 2026-09-29) -- both arrays indexed by GenericResource#ordinal(), a fixed-size-per-enum-value
-    // shape (not a Map) so a fresh resource category needs no format change here, just a bigger
-    // array. `required` is computed once by initializeRequirements() when a Blueprint is first bound
-    // and never recalculated (config, not box state -- deliberately NOT re-fetched from Settlemynts
-    // on every access, so a mid-game config retune doesn't retroactively change an in-progress box's
-    // own already-agreed cost). `everCompleted` distinguishes "never yet built" (still funding) from
+    // Settlemynts' own identity for the plot this box was created on -- see this class's own doc.
+    // Set once at creation (api.Blueprynts#createConstructionBox), never reassigned.
+    private UUID settlementCoreId;
+    private UUID plotId;
+
+    // Funding tally, rebuilt 2026-10-22 (see this class's own doc) -- keyed by the real Item the
+    // bound Blueprint actually uses, computed once by BlueprintMaterialCost at bind time. `required`
+    // is never recalculated after binding (an in-progress box's own already-agreed cost doesn't
+    // retroactively change). `everCompleted` distinguishes "never yet built" (still funding) from
     // "was built, currently mid-Reposition" -- both look like blueprintPlaced() == false with a
     // non-null placedBlueprintName(), but need different useWithoutItem() behavior.
-    private int[] required = new int[GenericResource.values().length];
-    private int[] supplied = new int[GenericResource.values().length];
+    private Map<Item, Integer> required = new LinkedHashMap<>();
+    private Map<Item, Integer> supplied = new LinkedHashMap<>();
     private boolean everCompleted;
 
-    // Suspends attemptCompletion/tickConstruction entirely between "Reposition Building" clearing
-    // whatever was standing and the player actually placing a new anchor with the Locator -- a real
-    // bug, 2026-09-29: without this, the once-a-second ticker's own attemptCompletion call resumed
-    // building at the *old* anchor within about a second of the clear (funding/elapsed time hadn't
-    // changed, so it just re-pasted right back), and then placing the new anchor left those stray
-    // blocks behind, untracked, since a fresh removalSnapshot had already started accumulating for
-    // the new location by then ("which ended up leaving parts behind").
+    // Suspends attemptCompletion entirely between "Reposition Building" clearing whatever was
+    // standing and the player actually placing a new anchor with the Locator -- a real bug,
+    // 2026-09-29: without this, a re-check resumed building at the *old* anchor within about a
+    // second of the clear (funding hadn't changed, so it just re-pasted right back), and then
+    // placing the new anchor left those stray blocks behind, untracked, since a fresh
+    // removalSnapshot had already started accumulating for the new location by then.
     private boolean repositionPending;
 
     // Where the (still-unbuilt) bound Blueprint will actually paste -- {@code null} means "this
@@ -119,24 +155,6 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     private BlockPos pendingAnchor;
     private Direction pendingFacing;
 
-    // Real construction-duration gating (added 2026-09-29, user correction: "it shouldn't hit 100%
-    // immediately... it should be 100% funded immediately, not 100% constructed" -- funding and
-    // construction progress are deliberately two separate numbers, not one). `minTimeTicks <= 0`
-    // means no time gate at all (a box created before this existed, or with no Settlemynts config).
-    //
-    // Revised 2026-10-05, explicit user request: construction time only accumulates while the box
-    // actually holds resources ("I'd like the auto build time to only elapse if there are resources
-    // in the box"), not as flat wall-clock time since binding -- previously `timeBasedPercent` read
-    // straight off `level.getGameTime() - boundAtGameTime`, so a box sitting completely empty still
-    // ticked toward its minimum build time. `accumulatedTimeTicks` replaces that: it only advances
-    // inside {@link #tickConstruction} (the once-a-second ticker), and only on a tick where {@link
-    // #hasAnyResources()} is true -- an empty box's timer is effectively paused.
-    private int minTimeTicks;
-    private long accumulatedTimeTicks;
-    // NPC auto-funding's own target pace (design-document.md Section 14a, Settlemynts' own doc) --
-    // stored alongside minTimeTicks the same way, 2026-09-30, once a real NPC-delivery pipeline
-    // (Settlemynts' construction.NpcAutoFundingTicker) needed to read it back after binding.
-    private int maxTimeTicks;
     // The bound Blueprint's own Tier (1-5) -- known at bind time (BluepryntsMod's Blueprint-select
     // handler already reads it off the loaded BlueprintRecord) but never stored on the box itself
     // until Settlemynts' Guardhouse feature needed to read it back cross-mod (garrison size/gear
@@ -150,9 +168,9 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     // to 1 (every plot starts at Tier 1) -- see `zone.PlotRecord#tier`'s own class doc on the
     // Settlemynts side for the full split between "unlocked Tier cap" and "built Tier."
     private int allowedTier = 1;
-    // Not persisted -- purely an optimization so the ticker's once-a-second re-check doesn't
-    // re-run RealBlueprintPlacement when nothing has actually changed; worst case after a
-    // reload it just redundantly re-pastes the same already-correct cells once, harmless.
+    // Not persisted -- purely an optimization so a redundant re-check doesn't re-run
+    // RealBlueprintPlacement when nothing has actually changed; worst case after a reload it just
+    // redundantly re-pastes the same already-correct cells once, harmless.
     private int lastBuiltPercent = -1;
 
     // Transaction ledger (added 2026-10-12, explicit user request) -- a standing, human-readable
@@ -186,6 +204,22 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     /** Only ever called once, immediately after placement -- see {@code api.Blueprynts#createConstructionBox}. */
     public void setZoneTypeId(Identifier zoneTypeId) {
         this.zoneTypeId = zoneTypeId;
+        setChanged();
+    }
+
+    /** {@code null} for a box created before Settlemynts started passing this at creation -- see this class's own doc. */
+    public UUID settlementCoreId() {
+        return settlementCoreId;
+    }
+
+    public UUID plotId() {
+        return plotId;
+    }
+
+    /** Only ever called once, immediately after placement -- see {@code api.Blueprynts#createConstructionBox}. */
+    public void setPlotIdentity(UUID settlementCoreId, UUID plotId) {
+        this.settlementCoreId = settlementCoreId;
+        this.plotId = plotId;
         setChanged();
     }
 
@@ -249,8 +283,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      * someone hits 'Relocate Building' it needs to clear the partially built ones"). Also resets
      * {@link #lastBuiltPercent} so the next {@link #attemptCompletion} at a new anchor
      * doesn't think progress already exceeds what's actually standing there. Does **not** touch
-     * funding progress ({@link #required}/{@link #supplied}) or {@link #accumulatedTimeTicks} --
-     * moving the pending build location doesn't refund or re-time it.
+     * funding progress ({@link #required}/{@link #supplied}) -- moving the pending build location
+     * doesn't refund it.
      *
      * @return the instance callers must continue operating on -- almost always {@code this}, but if
      *         this very box turned out to be sitting inside its own removalSnapshot (see below) and
@@ -328,30 +362,25 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     void copyStateFrom(ConstructionBoxBlockEntity source) {
         this.constructionId = source.constructionId;
         this.zoneTypeId = source.zoneTypeId;
+        this.settlementCoreId = source.settlementCoreId;
+        this.plotId = source.plotId;
         this.blueprintPlaced = source.blueprintPlaced;
         this.placedBlueprintName = source.placedBlueprintName;
         this.buildableArea = source.buildableArea;
         this.plotArea = source.plotArea;
         this.removalSnapshot = source.removalSnapshot;
-        this.required = source.required.clone();
-        this.supplied = source.supplied.clone();
+        this.required = new LinkedHashMap<>(source.required);
+        this.supplied = new LinkedHashMap<>(source.supplied);
         this.everCompleted = source.everCompleted;
         this.repositionPending = source.repositionPending;
         this.pendingAnchor = source.pendingAnchor;
         this.pendingFacing = source.pendingFacing;
-        this.minTimeTicks = source.minTimeTicks;
-        this.maxTimeTicks = source.maxTimeTicks;
         this.tier = source.tier;
         this.allowedTier = source.allowedTier;
-        this.accumulatedTimeTicks = source.accumulatedTimeTicks;
         this.lastBuiltPercent = source.lastBuiltPercent;
         this.ledger.clear();
         this.ledger.addAll(source.ledger);
         setChanged();
-    }
-
-    public int maxTimeTicks() {
-        return maxTimeTicks;
     }
 
     public int tier() {
@@ -386,65 +415,86 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         setChanged();
     }
 
-    /** True while this box is bound to a Blueprint but not yet built and not mid-Reposition -- the same state {@link #attemptCompletion} and NPC auto-funding both need to check before touching funding. */
+    /** True while this box is bound to a Blueprint but not yet built and not mid-Reposition -- the same state {@link #attemptCompletion} checks before touching funding. */
     public boolean isFundable() {
         return placedBlueprintName != null && !blueprintPlaced && !repositionPending;
     }
 
-    public int requiredAmount(GenericResource resource) {
-        return required[resource.ordinal()];
+    /** 0 if {@code item} isn't part of this box's requirements at all. */
+    public int requiredAmount(Item item) {
+        return required.getOrDefault(item, 0);
     }
 
-    public int suppliedAmount(GenericResource resource) {
-        return supplied[resource.ordinal()];
+    public int suppliedAmount(Item item) {
+        return supplied.getOrDefault(item, 0);
+    }
+
+    /** {@code max(0, required - supplied)} for one item. */
+    public int remaining(Item item) {
+        return Math.max(0, requiredAmount(item) - suppliedAmount(item));
+    }
+
+    /** Every item still short, in the same order {@link #required} itself iterates (the Blueprint's own cell order) -- empty once fully funded. */
+    public Map<Item, Integer> missingItems() {
+        Map<Item, Integer> missing = new LinkedHashMap<>();
+        for (Map.Entry<Item, Integer> entry : required.entrySet()) {
+            int remaining = remaining(entry.getKey());
+            if (remaining > 0) {
+                missing.put(entry.getKey(), remaining);
+            }
+        }
+        return missing;
     }
 
     /**
-     * Called once, right when a Blueprint is first bound -- caches this box's own funding
-     * requirements and construction duration (from Settlemynts, or all-zero/no-gate if that config
-     * isn't available). Never recalculated afterward -- a later config retune doesn't retroactively
-     * change an in-progress box's own already-agreed cost/duration.
+     * Called once, right when a Blueprint is (first bound, or rebound to a different one via
+     * "Change Blueprint") -- {@code cost} is the Blueprint's own real material list, computed by
+     * {@link com.github.cerealklla.blueprynts.blueprint.BlueprintMaterialCost}. Never recalculated
+     * afterward -- a later re-derivation (e.g. the Blueprint file itself changing) doesn't
+     * retroactively change an in-progress box's own already-agreed cost.
+     *
+     * <p>Also resets {@link #everCompleted} -- real bug fixed 2026-10-22: that flag is a historical
+     * "was the currently-bound Blueprint ever fully built" latch, but used to only ever get set
+     * {@code true}, never reset on a rebind. A box that completed once, then got rebound to a
+     * different/higher-Tier Blueprint (freshly unfunded), kept reporting {@code everCompleted() ==
+     * true} for the new Blueprint it had never actually built -- misleading every reader of it
+     * ({@code ConstructionBoxBlock}'s right-click flow, {@code ConstructionBoxMenu}'s client sync,
+     * {@code api.Blueprynts#getConstructionBoxStatus}, and {@code BuildingLocatorItem}'s own
+     * now-fixed "instantly completes on reposition" bug).
      */
-    public void initializeRequirements(FundingRequirements requirements) {
-        Arrays.fill(required, 0);
-        Arrays.fill(supplied, 0);
-        for (Map.Entry<GenericResource, Integer> entry : requirements.costs().entrySet()) {
-            required[entry.getKey().ordinal()] = entry.getValue();
-        }
-        this.minTimeTicks = requirements.minTimeTicks();
-        this.maxTimeTicks = requirements.maxTimeTicks();
-        this.accumulatedTimeTicks = 0;
+    public void initializeRequirements(Map<Item, Integer> cost) {
+        required = new LinkedHashMap<>(cost);
+        supplied = new LinkedHashMap<>();
+        everCompleted = false;
         setChanged();
     }
 
     public boolean isFullyFunded() {
-        for (int i = 0; i < required.length; i++) {
-            if (supplied[i] < required[i]) {
+        for (Map.Entry<Item, Integer> entry : required.entrySet()) {
+            if (suppliedAmount(entry.getKey()) < entry.getValue()) {
                 return false;
             }
         }
         return true;
     }
 
-    /** Tallies a matching deposit (capped at that resource's own required amount -- excess is the caller's own responsibility to reject before calling this) and attempts completion. */
-    public void deposit(ServerLevel level, GenericResource resource, int count) {
-        int index = resource.ordinal();
-        if (required[index] <= 0 || count <= 0) {
+    /** Tallies a matching deposit (capped at that item's own required amount -- excess is the caller's own responsibility to reject before calling this), attempts completion, and re-syncs the plot's Planned Inventory wishlist. */
+    public void deposit(ServerLevel level, Item item, int count) {
+        int reqAmount = required.getOrDefault(item, 0);
+        if (reqAmount <= 0 || count <= 0) {
             return;
         }
-        supplied[index] = Math.min(required[index], supplied[index] + count);
+        supplied.merge(item, count, Integer::sum);
+        supplied.put(item, Math.min(reqAmount, supplied.get(item)));
         setChanged();
-        attemptCompletion(level);
+        onFundingChanged(level);
     }
 
     /**
-     * Pastes the bound Blueprint up to whatever percentage its own funding currently supports --
-     * overall {@code totalSupplied/totalRequired} across every resource row (a placeholder
-     * approximation: a resource sitting at 0% doesn't currently hold the *overall* percentage back
-     * the way per-resource gating might, flagged as a known simplification, not silently exact).
-     * Trivially 100% if no cost is configured at all (a Settlemynts-less server, or nothing set for
-     * this Zone Type + Tier), so a zero-cost box still builds for free. Called after every deposit,
-     * and once immediately after binding. No-op if already fully built or nothing is bound.
+     * Pastes the bound Blueprint up to whatever percentage its own funding currently supports.
+     * Trivially 100% if no cost is configured at all (e.g. a Blueprint with no placeable-item cells
+     * at all), so a zero-cost box still builds for free. Called after every funding change. No-op if
+     * already fully built or nothing is bound.
      *
      * <p>Re-pastes into the *same* accumulated {@link #removalSnapshot} across repeated calls
      * (rather than a fresh one each time) -- {@code TerrainSnapshot#captureIfAbsent} only ever
@@ -458,12 +508,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         if (!isFundable()) {
             return false;
         }
-        // Deliberately two separate numbers, not one -- funding can reach 100% instantly (e.g. a
-        // zero-cost box, or a player dumping in every resource at once), but real construction
-        // progress is additionally capped by elapsed time since binding. User correction, 2026-09-29:
-        // "it shouldn't hit 100% immediately... it should be 100% funded immediately, not 100%
-        // constructed."
-        int pct = Math.min(fundedPercent(), timeBasedPercent());
+        int pct = fundedPercent();
         if (pct <= 0 || pct <= lastBuiltPercent) {
             return false;
         }
@@ -495,13 +540,13 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         return pct >= 100;
     }
 
-    /** Overall funding percentage across every required resource row, 0-100; trivially 100 if nothing is required at all. */
-    private int fundedPercent() {
+    /** Overall funding percentage across every required item, 0-100; trivially 100 if nothing is required at all. */
+    public int fundedPercent() {
         long totalRequired = 0;
         long totalSupplied = 0;
-        for (int i = 0; i < required.length; i++) {
-            totalRequired += required[i];
-            totalSupplied += supplied[i];
+        for (Map.Entry<Item, Integer> entry : required.entrySet()) {
+            totalRequired += entry.getValue();
+            totalSupplied += suppliedAmount(entry.getKey());
         }
         if (totalRequired <= 0) {
             return 100;
@@ -509,42 +554,44 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         return (int) Math.min(100, (100L * totalSupplied) / totalRequired);
     }
 
-    /** How much of {@link #minTimeTicks} has accumulated so far (see {@link #accumulatedTimeTicks}'s own doc), 0-100; trivially 100 if no time gate is configured ({@code minTimeTicks <= 0}). */
-    private int timeBasedPercent() {
-        if (minTimeTicks <= 0) {
-            return 100;
+    /**
+     * Re-checks completion, then pushes whatever's still missing to the owning plot's Planned
+     * Inventory wishlist (a no-op if {@link #settlementCoreId}/{@link #plotId} aren't known -- see
+     * this class's own doc) -- called after every funding change (a deposit, or a plot-stock pull)
+     * so the wishlist always reflects the box's real current shortfall, not a stale one.
+     */
+    private void onFundingChanged(ServerLevel level) {
+        attemptCompletion(level);
+        if (settlementCoreId != null && plotId != null) {
+            Map<Identifier, Integer> missing = new LinkedHashMap<>();
+            missingItems().forEach((item, amount) -> missing.put(BuiltInRegistries.ITEM.getKey(item), amount));
+            SettlemyntsPlotBoxBridge.syncMissingMaterials(level, settlementCoreId, plotId, missing);
         }
-        return (int) Math.max(0, Math.min(100, (100L * accumulatedTimeTicks) / minTimeTicks));
-    }
-
-    /** {@code true} if any resource row currently holds a nonzero supplied amount -- the "are there resources in the box" check {@link #tickConstruction} gates time accumulation on. */
-    private boolean hasAnyResources() {
-        for (int amount : supplied) {
-            if (amount > 0) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
-     * Re-checks construction progress once a second (called from {@code ConstructionBoxBlock}'s
-     * ticker) -- without this, a fully-funded-but-still-time-gated box would only ever advance on
-     * its *next* deposit, which might never come. Also where {@link #accumulatedTimeTicks} actually
-     * advances: only while {@link #isFundable()} and {@link #hasAnyResources()} are both true, so an
-     * empty box's construction timer is paused, not just its funding. {@link #attemptCompletion}'s
-     * own {@code lastBuiltPercent} check keeps a redundant call (nothing to build yet, or already
-     * caught up) cheap.
+     * Withdraws whatever it can of every still-missing item directly from the owning plot's own
+     * boxes (free, no economy transaction), then re-syncs the remaining shortfall to Planned
+     * Inventory -- called once right after binding (covers "using materials in the plot itself"
+     * immediately at construction start) and again any time Settlemynts reports the plot's boxes
+     * changed (mirrors {@code watchtower.WatchTowerBeaconBlockEntity}'s own fuel-pull trigger). A
+     * silent no-op if this box's plot identity isn't known (see this class's own doc) or nothing is
+     * currently missing.
      */
-    public void tickConstruction(ServerLevel level) {
-        if (!isFundable()) {
+    public void pullFromPlotAndSync(ServerLevel level) {
+        if (!isFundable() || settlementCoreId == null || plotId == null) {
             return;
         }
-        if (minTimeTicks > 0 && hasAnyResources()) {
-            accumulatedTimeTicks += 20;
-            setChanged();
+        for (Map.Entry<Item, Integer> entry : missingItems().entrySet()) {
+            Item item = entry.getKey();
+            Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
+            int got = SettlemyntsPlotBoxBridge.withdrawFromPlot(level, plotId, itemId, entry.getValue());
+            if (got > 0) {
+                supplied.merge(item, got, Integer::sum);
+                setChanged();
+            }
         }
-        attemptCompletion(level);
+        onFundingChanged(level);
     }
 
     @Override
@@ -552,6 +599,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         super.loadAdditional(input);
         constructionId = input.read("ConstructionId", UUIDUtil.CODEC).orElse(null);
         zoneTypeId = input.read("ZoneTypeId", Identifier.CODEC).orElse(null);
+        settlementCoreId = input.read("SettlementCoreId", UUIDUtil.CODEC).orElse(null);
+        plotId = input.read("PlotId", UUIDUtil.CODEC).orElse(null);
         blueprintPlaced = input.getBooleanOr("BlueprintPlaced", false);
         placedBlueprintName = input.read("PlacedBlueprintName", Codec.STRING).orElse(null);
         buildableArea = input.read("BuildableArea", AREA_CODEC).orElse(null);
@@ -560,14 +609,11 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         everCompleted = input.getBooleanOr("EverCompleted", false);
         pendingAnchor = input.read("PendingAnchor", BlockPos.CODEC).orElse(null);
         pendingFacing = input.read("PendingFacing", Direction.CODEC).orElse(null);
-        minTimeTicks = input.getIntOr("MinTimeTicks", 0);
-        maxTimeTicks = input.getIntOr("MaxTimeTicks", 0);
         tier = input.getIntOr("Tier", 0);
         allowedTier = input.getIntOr("AllowedTier", 1);
-        accumulatedTimeTicks = input.read("AccumulatedTimeTicks", Codec.LONG).orElse(0L);
         repositionPending = input.getBooleanOr("RepositionPending", false);
-        required = toArray(input.read("Required", Codec.INT.listOf()).orElse(List.of()), required.length);
-        supplied = toArray(input.read("Supplied", Codec.INT.listOf()).orElse(List.of()), supplied.length);
+        required = fromIdMap(input.read("Required", ITEM_AMOUNTS_CODEC).orElse(Map.of()));
+        supplied = fromIdMap(input.read("Supplied", ITEM_AMOUNTS_CODEC).orElse(Map.of()));
         ledger.clear();
         ledger.addAll(input.read("Ledger", LedgerEntry.CODEC.listOf()).orElse(List.of()));
     }
@@ -577,6 +623,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         super.saveAdditional(output);
         output.storeNullable("ConstructionId", UUIDUtil.CODEC, constructionId);
         output.storeNullable("ZoneTypeId", Identifier.CODEC, zoneTypeId);
+        output.storeNullable("SettlementCoreId", UUIDUtil.CODEC, settlementCoreId);
+        output.storeNullable("PlotId", UUIDUtil.CODEC, plotId);
         output.putBoolean("BlueprintPlaced", blueprintPlaced);
         if (placedBlueprintName != null) {
             output.putString("PlacedBlueprintName", placedBlueprintName);
@@ -588,13 +636,10 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         output.storeNullable("PendingAnchor", BlockPos.CODEC, pendingAnchor);
         output.storeNullable("PendingFacing", Direction.CODEC, pendingFacing);
         output.putBoolean("RepositionPending", repositionPending);
-        output.putInt("MinTimeTicks", minTimeTicks);
-        output.putInt("MaxTimeTicks", maxTimeTicks);
         output.putInt("Tier", tier);
         output.putInt("AllowedTier", allowedTier);
-        output.store("AccumulatedTimeTicks", Codec.LONG, accumulatedTimeTicks);
-        output.store("Required", Codec.INT.listOf(), toList(required));
-        output.store("Supplied", Codec.INT.listOf(), toList(supplied));
+        output.store("Required", ITEM_AMOUNTS_CODEC, toIdMap(required));
+        output.store("Supplied", ITEM_AMOUNTS_CODEC, toIdMap(supplied));
         output.store("Ledger", LedgerEntry.CODEC.listOf(), ledger);
     }
 
@@ -608,19 +653,20 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         return new ConstructionBoxMenu(ModMenus.CONSTRUCTION_BOX.get(), containerId, inventory, this);
     }
 
-    private static int[] toArray(List<Integer> list, int expectedSize) {
-        int[] array = new int[expectedSize];
-        for (int i = 0; i < Math.min(expectedSize, list.size()); i++) {
-            array[i] = list.get(i);
-        }
-        return array;
+    private static Map<Item, Integer> fromIdMap(Map<Identifier, Integer> idMap) {
+        Map<Item, Integer> result = new LinkedHashMap<>();
+        idMap.forEach((id, amount) -> {
+            Item item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+            if (item != null) {
+                result.put(item, amount);
+            }
+        });
+        return result;
     }
 
-    private static List<Integer> toList(int[] array) {
-        List<Integer> list = new ArrayList<>(array.length);
-        for (int value : array) {
-            list.add(value);
-        }
-        return list;
+    private static Map<Identifier, Integer> toIdMap(Map<Item, Integer> itemMap) {
+        Map<Identifier, Integer> result = new LinkedHashMap<>();
+        itemMap.forEach((item, amount) -> result.put(BuiltInRegistries.ITEM.getKey(item), amount));
+        return result;
     }
 }

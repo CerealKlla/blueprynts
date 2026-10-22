@@ -278,14 +278,22 @@ public class BluepryntsMod {
                     boolean hadPriorBlueprint = box.placedBlueprintName() != null;
                     box = box.clearPartialConstruction(level);
                     box.setBlueprintPlaced(false);
-                    com.github.cerealklla.blueprynts.construction.FundingRequirements requirements =
-                            ModList.get().isLoaded("settlemynts") && box.zoneTypeId() != null
-                                    ? com.github.cerealklla.blueprynts.bridge.SettlemyntsConstructionConfigBridge.getRequirements(box.zoneTypeId(), tier)
-                                    : com.github.cerealklla.blueprynts.construction.FundingRequirements.NONE;
+                    // Real material cost (2026-10-22, replacing the old Settlemynts Zone+Tier
+                    // GenericResource config table -- see ConstructionBoxBlockEntity's own doc) --
+                    // the Blueprint's own already-derived BlueprintResources#computeFrom summary
+                    // (BlueprintRecord#resources(), computed once at Save time), converted from
+                    // Identifier to the real Item.
+                    java.util.Map<net.minecraft.world.item.Item, Integer> cost = new java.util.LinkedHashMap<>();
+                    found.get().resources().forEach((itemId, amount) ->
+                            net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId).ifPresent(item -> cost.put(item, amount)));
                     box.setPlacedBlueprintName(payload.name());
                     box.setTier(tier);
-                    box.initializeRequirements(requirements);
-                    box.attemptCompletion(level);
+                    box.initializeRequirements(cost);
+                    // "Buy all the materials needed at once when construction starts" -- pulls
+                    // whatever it can for free from the plot's own boxes right now, then pushes
+                    // whatever's still missing to Planned Inventory for the existing nightly
+                    // settlement-trading pass to buy (see ConstructionBoxBlockEntity#pullFromPlotAndSync).
+                    box.pullFromPlotAndSync(level);
                     player.sendSystemMessage(Component.literal(box.blueprintPlaced()
                             ? "Blueprint \"" + payload.name() + "\" placed."
                             : (hadPriorBlueprint ? "Now building \"" : "Blueprint \"") + payload.name()

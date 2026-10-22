@@ -1,14 +1,12 @@
 package com.github.cerealklla.blueprynts.api;
 
 import java.util.Collection;
-import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.github.cerealklla.blueprynts.blueprint.BlueprintType;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry;
-import com.github.cerealklla.blueprynts.blueprint.GenericResource;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlockEntity;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxIndex;
 import com.github.cerealklla.blueprynts.registration.ModBlocks;
@@ -68,8 +66,20 @@ public final class Blueprynts {
      *                       anywhere within the plot, not only the 15x15 or 50x50 valid area for the
      *                       building" -- then "but a plot is a polygon, not a rectangle" -- the box's
      *                       own reposition check is against this field, never {@code buildableArea}.
+     * @param settlementCoreId the owning plot's own settlement core id (Settlemynts' {@code
+     *                       GhostTownHallCoreEntity#getUUID()}), and
+     * @param plotId         ... its own plot id (Settlemynts' {@code PlotRecord#plotId()}) -- added
+     *                       2026-10-22 so the box can reach back into Settlemynts by plot identity
+     *                       directly (pulling missing materials from the plot's own boxes, pushing a
+     *                       shortfall to Planned Inventory) without resolving "which plot is this"
+     *                       from its own world position, which doesn't work -- the box sits just
+     *                       outside the plot's buildable area (see {@code
+     *                       ConstructionBoxMenu#resolvePermissionCheckPos}'s own doc for the same
+     *                       gotcha already found once for permission checks). Either may be {@code
+     *                       null} (a Settlemynts-less server, or a caller with no plot of its own).
      */
-    public static UUID createConstructionBox(ServerLevel level, BlockPos pos, Direction facing, Identifier zoneTypeId, BuildableArea buildableArea, PlotArea plotArea) {
+    public static UUID createConstructionBox(ServerLevel level, BlockPos pos, Direction facing, Identifier zoneTypeId,
+                                               BuildableArea buildableArea, PlotArea plotArea, UUID settlementCoreId, UUID plotId) {
         level.setBlock(pos, ModBlocks.CONSTRUCTION_BOX.get().defaultBlockState()
                 .setValue(HorizontalDirectionalBlock.FACING, facing), 3);
         UUID id = UUID.randomUUID();
@@ -78,6 +88,7 @@ public final class Blueprynts {
             box.setZoneTypeId(zoneTypeId);
             box.setBuildableArea(buildableArea);
             box.setPlotArea(plotArea);
+            box.setPlotIdentity(settlementCoreId, plotId);
         }
         ConstructionBoxIndex.get(level.getServer()).put(id, GlobalPos.of(level.dimension(), pos));
         return id;
@@ -106,38 +117,42 @@ public final class Blueprynts {
         return Optional.of(new ConstructionBoxStatus(box.everCompleted(), box.plotArea()));
     }
 
-    /** One resource row of a Building Supply Box's funding state. {@code missing()} is never negative even if {@code supplied} somehow exceeds {@code required}. */
-    public record ResourceFunding(int required, int supplied) {
-        public int missing() {
-            return Math.max(0, required - supplied);
+    /**
+     * Every item {@code boxPos}'s Building Supply Box is still short of, for an external mod that
+     * needs to react to a shortfall without ever importing {@code
+     * construction.ConstructionBoxBlockEntity} directly -- replaces the old {@code NpcFundingState}/
+     * {@code getNpcFundingState} (2026-10-22, see that class's own doc for the funding-model
+     * rework this is part of). Empty if the box isn't loaded, isn't fundable, or has nothing missing.
+     */
+    public static Map<Identifier, Integer> getMissingMaterials(ServerLevel level, BlockPos boxPos) {
+        if (!(level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box) || !box.isFundable()) {
+            return Map.of();
         }
+        Map<Identifier, Integer> missing = new java.util.LinkedHashMap<>();
+        box.missingItems().forEach((item, amount) ->
+                missing.put(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item), amount));
+        return missing;
+    }
+
+    /** Deposits {@code count} of the real item {@code itemId} into {@code boxPos}'s Building Supply Box, same clamping/completion-check behavior as a player's own deposit. No-op if the box isn't loaded or {@code itemId} doesn't resolve to a real item. */
+    public static void depositItem(ServerLevel level, BlockPos boxPos, Identifier itemId, int count) {
+        if (!(level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box)) {
+            return;
+        }
+        net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId)
+                .ifPresent(item -> box.deposit(level, item, count));
     }
 
     /**
-     * A read-only snapshot of a Building Supply Box's funding state, for NPC auto-funding (Settlemynts'
-     * {@code construction.NpcAutoFundingTicker}, added 2026-09-30) to compute its own delivery pace
-     * against without ever importing {@code construction.ConstructionBoxBlockEntity} directly -- same
-     * "read-only facade" pattern as {@link ConstructionBoxStatus}.
+     * Re-triggers {@code boxPos}'s Building Supply Box's own plot-stock pull (see {@code
+     * ConstructionBoxBlockEntity#pullFromPlotAndSync}) -- the intended call site for Settlemynts'
+     * own {@code bridge.BlueprintsConstructionBridge} to notify a box that the owning plot's boxes
+     * just changed (added 2026-10-22, mirrors {@code watchtower.WatchTowerRefuelNotifier}'s own
+     * trigger shape for the Watch Tower Beacon). No-op if the box isn't loaded.
      */
-    public record NpcFundingState(Map<GenericResource, ResourceFunding> resources, int maxTimeTicks) {
-    }
-
-    /** {@code Optional.empty()} if {@code boxPos} has no loaded box, or the box isn't currently fundable (no Blueprint bound yet, already built, or mid-Reposition -- see {@code ConstructionBoxBlockEntity#isFundable}). */
-    public static Optional<NpcFundingState> getNpcFundingState(ServerLevel level, BlockPos boxPos) {
-        if (!(level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box) || !box.isFundable()) {
-            return Optional.empty();
-        }
-        Map<GenericResource, ResourceFunding> resources = new EnumMap<>(GenericResource.class);
-        for (GenericResource resource : GenericResource.values()) {
-            resources.put(resource, new ResourceFunding(box.requiredAmount(resource), box.suppliedAmount(resource)));
-        }
-        return Optional.of(new NpcFundingState(resources, box.maxTimeTicks()));
-    }
-
-    /** Deposits {@code count} of {@code resource} into {@code boxPos}'s Building Supply Box, same clamping/completion-check behavior as a player's own deposit. No-op if the box isn't loaded. */
-    public static void depositResource(ServerLevel level, BlockPos boxPos, GenericResource resource, int count) {
+    public static void notifyPlotBoxesChanged(ServerLevel level, BlockPos boxPos) {
         if (level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box) {
-            box.deposit(level, resource, count);
+            box.pullFromPlotAndSync(level);
         }
     }
 

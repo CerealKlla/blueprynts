@@ -1,7 +1,5 @@
 package com.github.cerealklla.blueprynts.construction;
 
-import com.github.cerealklla.blueprynts.blueprint.GenericResource;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
@@ -12,27 +10,31 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * The Construction Box's own screen -- Supplied/Needed funding rows (one {@link
- * ConstructionBoxFundingSlot} per {@link GenericResource}, fixed count regardless of what a given
- * box actually needs -- an unneeded row's slot just always rejects everything, {@code required ==
- * 0}) plus the player's own inventory/hotbar. Required/Supplied numbers sync to the client through
- * {@link ContainerData} (the same built-in mechanism vanilla's furnace uses for burn time, not a
- * custom network payload) rather than the menu-open extraData, so they stay live while the screen
- * is open as deposits happen.
+ * The Construction Box's own screen -- one funnel slot (any item the bound Blueprint still needs,
+ * see {@link ConstructionBoxFundingSlot}'s own doc) plus an overall funding-percentage readout, plus
+ * the player's own inventory/hotbar. Required/Supplied are now keyed by real {@link Item}s derived
+ * from the Blueprint itself (2026-10-22, see {@code ConstructionBoxBlockEntity}'s own doc) rather
+ * than a small fixed {@code GenericResource} enum -- there's no cheap way to sync an arbitrary-length
+ * per-item breakdown through {@link ContainerData} (a fixed-size int array) the way the old two-row
+ * Wood/Stone display did, so this screen deliberately shows only the aggregate {@link #fundedPercent()}
+ * now, not a per-item list -- a known, flagged simplification, not an oversight (see decisions.md).
+ * Everything else syncs the same way it always did: through {@link ContainerData}, not a custom
+ * network payload, so values stay live while the screen is open.
  */
 public class ConstructionBoxMenu extends AbstractContainerMenu {
 
-    private static final int RESOURCE_COUNT = GenericResource.values().length;
-    private static final int BOX_X_INDEX = RESOURCE_COUNT * 2;
-    private static final int BOX_Y_INDEX = RESOURCE_COUNT * 2 + 1;
-    private static final int BOX_Z_INDEX = RESOURCE_COUNT * 2 + 2;
-    private static final int BLUEPRINT_PLACED_INDEX = RESOURCE_COUNT * 2 + 3;
-    private static final int EVER_COMPLETED_INDEX = RESOURCE_COUNT * 2 + 4;
-    private static final int CAN_MANAGE_INDEX = RESOURCE_COUNT * 2 + 5;
-    private static final int DATA_SIZE = RESOURCE_COUNT * 2 + 6;
+    private static final int FUNDED_PERCENT_INDEX = 0;
+    private static final int BOX_X_INDEX = 1;
+    private static final int BOX_Y_INDEX = 2;
+    private static final int BOX_Z_INDEX = 3;
+    private static final int BLUEPRINT_PLACED_INDEX = 4;
+    private static final int EVER_COMPLETED_INDEX = 5;
+    private static final int CAN_MANAGE_INDEX = 6;
+    private static final int DATA_SIZE = 7;
 
     private final ConstructionBoxBlockEntity box; // null on the client's own reconstructed instance
     private final Container fundingContainer;
@@ -47,18 +49,12 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     public ConstructionBoxMenu(MenuType<?> type, int containerId, Inventory inventory, ConstructionBoxBlockEntity box) {
         super(type, containerId);
         this.box = box;
-        this.fundingContainer = new SimpleContainer(RESOURCE_COUNT);
+        this.fundingContainer = new SimpleContainer(1);
         boolean computedCanManage = false;
         if (box != null && box.getLevel() instanceof ServerLevel serverLevel) {
             BlockPos checkPos = resolvePermissionCheckPos(box);
             computedCanManage = com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.canManage(
                     serverLevel, checkPos, inventory.player.getUUID());
-            // Temporary diagnostic (2026-10-12, real report: "I'm not seeing the construction site
-            // button" on a fully-funded box) -- remove once the real cause is confirmed live.
-            com.github.cerealklla.blueprynts.BluepryntsMod.LOGGER.info(
-                    "[CanManageDebug] box={} plotArea={} checkPos={} player={} settlemyntsLoaded={} -> canManage={}",
-                    box.getBlockPos(), box.plotArea() != null, checkPos, inventory.player.getUUID(),
-                    com.github.cerealklla.blueprynts.bridge.SettlemyntsPermissionBridge.isLoaded(), computedCanManage);
         }
         this.canManage = computedCanManage;
         this.data = new SyncedData();
@@ -107,10 +103,7 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private static final int PLAYER_INV_Y = 124;
 
     private void layoutSlots(Inventory inventory) {
-        GenericResource[] resources = GenericResource.values();
-        for (int i = 0; i < resources.length; i++) {
-            addSlot(new ConstructionBoxFundingSlot(fundingContainer, i, 8 + i * 18, FUNDING_SLOT_Y, resources[i], this));
-        }
+        addSlot(new ConstructionBoxFundingSlot(fundingContainer, 0, 8, FUNDING_SLOT_Y, this));
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, PLAYER_INV_Y + row * 18));
@@ -121,47 +114,25 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         }
     }
 
-    /** Called by {@link ConstructionBoxFundingSlot#set} the instant a matching stack lands in a funding slot. */
-    void onDeposit(GenericResource resource, int count) {
+    /** Called by {@link ConstructionBoxFundingSlot#set} the instant a matching stack lands in the funding slot. */
+    void onDeposit(Item item, int count) {
         if (box != null && box.getLevel() instanceof ServerLevel serverLevel) {
-            box.deposit(serverLevel, resource, count);
+            box.deposit(serverLevel, item, count);
         }
     }
 
-    public int required(GenericResource resource) {
-        return data.get(resource.ordinal() * 2);
+    /** {@code max(0, required - supplied)} for {@code item} right now -- a generous default (never blocks a local click prediction) on the client's own reconstructed menu, which has no real box to ask. */
+    public int remaining(Item item) {
+        return box != null ? box.remaining(item) : Integer.MAX_VALUE;
     }
 
-    public int supplied(GenericResource resource) {
-        return data.get(resource.ordinal() * 2 + 1);
-    }
-
-    public int remaining(GenericResource resource) {
-        return Math.max(0, required(resource) - supplied(resource));
-    }
-
-    /** {@code true} once every row's Supplied meets its own Needed -- the client-visible "fully funded" state, mirroring {@code ConstructionBoxBlockEntity#isFullyFunded}. */
-    public boolean isFullyFunded() {
-        for (GenericResource resource : GenericResource.values()) {
-            if (supplied(resource) < required(resource)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /** Overall funding percentage across every required resource row, mirroring {@code ConstructionBoxBlockEntity#fundedPercent} exactly (client-visible construction progress, since 2026-09-29's percentage-driven pasting). */
     public int fundedPercent() {
-        long totalRequired = 0;
-        long totalSupplied = 0;
-        for (GenericResource resource : GenericResource.values()) {
-            totalRequired += required(resource);
-            totalSupplied += supplied(resource);
-        }
-        if (totalRequired <= 0) {
-            return 100;
-        }
-        return (int) Math.min(100, (100L * totalSupplied) / totalRequired);
+        return data.get(FUNDED_PERCENT_INDEX);
+    }
+
+    /** {@code true} once {@link #fundedPercent()} reaches 100 -- the client-visible "fully funded" state, mirroring {@code ConstructionBoxBlockEntity#isFullyFunded}. */
+    public boolean isFullyFunded() {
+        return fundedPercent() >= 100;
     }
 
     // Real, live playtest bug (2026-09-29): everCompleted()/blueprintPlaced()/boxPos() used to read
@@ -170,7 +141,7 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // and button-click payload built from these on the client silently saw "false"/(0,0,0) no matter
     // the real state ("Relocate Building" looked permanently disabled; "Reposition Supply Box" sent
     // a payload for block (0,0,0), a no-op server-side). All three now flow through the same
-    // ContainerData sync as the resource rows, so the client actually sees the real values.
+    // ContainerData sync as fundedPercent, so the client actually sees the real values.
     public boolean everCompleted() {
         return data.get(EVER_COMPLETED_INDEX) != 0;
     }
@@ -190,27 +161,23 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
 
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
-        // Shift-clicking a funding row does nothing special (it's a funnel, not real storage --
-        // ConstructionBoxFundingSlot#set clears it back to empty the instant a stack lands, so a
-        // funding-row index is never actually holding anything to move out). Shift-clicking from the
-        // player's own inventory routes through the same GenericResource matching the direct-drag
-        // path uses (real bug, 2026-09-30: this used to unconditionally no-op, so shift-click --
-        // the instinctive way to "manually add" items to any vanilla container -- silently did
-        // nothing with zero feedback).
-        if (index >= RESOURCE_COUNT) {
+        // Shift-clicking the funnel row does nothing special (it's a funnel, not real storage --
+        // ConstructionBoxFundingSlot#set clears it back to empty the instant a stack lands, so that
+        // index is never actually holding anything to move out). Shift-clicking from the player's
+        // own inventory routes through the same item-matching the direct-drag path uses (real bug,
+        // 2026-09-30: this used to unconditionally no-op, so shift-click -- the instinctive way to
+        // "manually add" items to any vanilla container -- silently did nothing with zero feedback).
+        if (index >= 1) {
             Slot sourceSlot = slots.get(index);
             if (sourceSlot.hasItem()) {
                 ItemStack sourceStack = sourceSlot.getItem();
-                for (GenericResource resource : GenericResource.values()) {
-                    int remaining = remaining(resource);
-                    if (remaining > 0 && resource.matches(sourceStack.getItem())) {
-                        int deposit = Math.min(remaining, sourceStack.getCount());
-                        onDeposit(resource, deposit);
-                        sourceStack.shrink(deposit);
-                        sourceSlot.set(sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-                        sourceSlot.setChanged();
-                        break;
-                    }
+                int remaining = remaining(sourceStack.getItem());
+                if (remaining > 0) {
+                    int deposit = Math.min(remaining, sourceStack.getCount());
+                    onDeposit(sourceStack.getItem(), deposit);
+                    sourceStack.shrink(deposit);
+                    sourceSlot.set(sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
+                    sourceSlot.setChanged();
                 }
             }
         }
@@ -231,9 +198,8 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
             if (box == null) {
                 return clientCache[index];
             }
-            if (index < RESOURCE_COUNT * 2) {
-                GenericResource resource = GenericResource.values()[index / 2];
-                return index % 2 == 0 ? box.requiredAmount(resource) : box.suppliedAmount(resource);
+            if (index == FUNDED_PERCENT_INDEX) {
+                return box.fundedPercent();
             }
             if (index == BOX_X_INDEX) {
                 return box.getBlockPos().getX();

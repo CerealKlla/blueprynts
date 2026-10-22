@@ -6,7 +6,6 @@ import com.github.cerealklla.blueprynts.blueprint.BlueprintStorage;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -15,8 +14,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntityTicker;
-import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.phys.BlockHitResult;
@@ -62,21 +59,10 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
         return new ConstructionBoxBlockEntity(pos, state);
     }
 
-    // Real construction-duration gating (added 2026-09-29) needs a re-check purely on elapsed time,
-    // not just on deposits -- a fully-funded-but-still-time-gated box would otherwise only ever
-    // advance on its *next* deposit, which might never come once funding is already 100%.
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        if (level.isClientSide() || type != com.github.cerealklla.blueprynts.registration.ModBlockEntities.CONSTRUCTION_BOX.get()) {
-            return null;
-        }
-        return (BlockEntityTicker<T>) (BlockEntityTicker<ConstructionBoxBlockEntity>) (lvl, pos, st, box) -> {
-            if (lvl instanceof ServerLevel serverLevel && lvl.getGameTime() % 20 == 0) {
-                box.tickConstruction(serverLevel);
-            }
-        };
-    }
+    // No BlockEntityTicker of any kind (removed 2026-10-22) -- the old once-a-second re-check only
+    // ever existed to re-apply elapsed-time construction gating, which no longer exists at all (see
+    // ConstructionBoxBlockEntity's own doc). Funding is now purely event-driven: a deposit, a
+    // bind/rebind, or a Settlemynts-notified plot-stock change each call attemptCompletion directly.
 
     @Override
     public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {

@@ -1,7 +1,6 @@
 package com.github.cerealklla.blueprynts.construction;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import com.github.cerealklla.blueprynts.api.Blueprynts;
@@ -80,40 +79,26 @@ public class BuildingLocatorItem extends Item {
         GhostBuildingPreviewEntity.clear(serverLevel, player.getUUID(), "zone");
         GhostBuildingPreviewEntity.clear(serverLevel, player.getUUID(), "footprint");
 
-        // Already fully funded once before (this is moving an existing structure) -- paste it right
-        // back immediately, same as always. Still funding for the first time -- just move where the
-        // *pending* structure will paste once funded, don't bypass funding by building it here.
-        if (box.everCompleted()) {
-            // Moving the building might land it on top of its own Building Supply Box (or a future
-            // Plot Config Sign) -- real bug, 2026-09-30: relocate any such obstruction first instead
-            // of letting RealBlueprintPlacement silently overwrite/destroy it. If this box itself was
-            // the one relocated, its own Java reference is now stale -- switch to the fresh instance.
-            Set<BlockPos> footprint = RealBlueprintPlacement.computeFootprintPositions(anchor, facing, box.placedBlueprintName());
-            Optional<BlockPos> selfMoved = ConstructionBoxOverlapGuard.relocateObstructions(
-                    serverLevel, footprint, SiteTerrainOps.siteFloorY(anchor), box.buildableArea(), box.constructionId());
-            ConstructionBoxBlockEntity activeBox = box;
-            if (selfMoved.isPresent()) {
-                if (!(serverLevel.getBlockEntity(selfMoved.get()) instanceof ConstructionBoxBlockEntity moved)) {
-                    player.sendSystemMessage(Component.literal("This Building Supply Box's own spot is gone."));
-                    return InteractionResult.FAIL;
-                }
-                activeBox = moved;
-            }
-
-            RealBlueprintPlacement.Result result = RealBlueprintPlacement.place(serverLevel, anchor, facing, activeBox.placedBlueprintName());
-            if (result.error() != null) {
-                player.sendSystemMessage(Component.literal(result.error()));
-                return InteractionResult.FAIL;
-            }
-            activeBox.setBlueprintPlaced(true);
-            activeBox.setRemovalSnapshot(result.snapshot());
-            activeBox.setRepositionPending(false);
-            player.sendSystemMessage(Component.literal("Building placed."));
-        } else {
-            box.setPendingAnchor(anchor, facing);
-            box.setRepositionPending(false);
-            player.sendSystemMessage(Component.literal("Pending build location set -- still needs funding."));
-        }
+        // Move the pending anchor to the clicked spot, then let attemptCompletion re-paste up to
+        // whatever percentage is currently funded -- covers "already fully funded, paste the whole
+        // thing right back" and "still partially funded, paste only that much" with the exact same
+        // call, including its own overlap-guard/self-move handling (identical to what used to be
+        // hand-duplicated here).
+        //
+        // Real bug fixed 2026-10-22: this used to branch on box.everCompleted() and, in the true
+        // branch, paste unconditionally at 100% via RealBlueprintPlacement's non-percentage overload
+        // -- but everCompleted() is a one-way historical latch, never reset when a box gets rebound
+        // to a different (or higher-Tier) Blueprint via "Change Blueprint." A box that had completed
+        // once, then got rebound and was only partially funded again, still read everCompleted() as
+        // true and instantly pasted the entire new Blueprint regardless of actual funding --
+        // "partially built, reposition instantly builds it." attemptCompletion already computes the
+        // real current percentage itself, so there's no need to special-case "fully funded" at all.
+        box.setPendingAnchor(anchor, facing);
+        box.setRepositionPending(false);
+        boolean completed = box.attemptCompletion(serverLevel);
+        player.sendSystemMessage(Component.literal(completed
+                ? "Building placed."
+                : "Pending build location set -- builds automatically as funding allows."));
         stack.shrink(1);
         return InteractionResult.SUCCESS_SERVER;
     }
