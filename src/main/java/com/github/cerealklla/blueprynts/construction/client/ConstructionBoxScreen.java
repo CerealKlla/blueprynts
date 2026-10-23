@@ -1,5 +1,6 @@
 package com.github.cerealklla.blueprynts.construction.client;
 
+import com.github.cerealklla.blueprynts.construction.ConstructionBoxLayout;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxMenu;
 
 import net.minecraft.client.Minecraft;
@@ -48,35 +49,27 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
 
     private static final Identifier BACKGROUND = Identifier.withDefaultNamespace("textures/gui/container/generic_54.png");
 
-    // Must match ConstructionBoxMenu#layoutSlots' own copies of these constants exactly -- see that
-    // class's own doc for the 2026-10-22 rework (funnel slot removed, requirements panel is now a
-    // fixed-height scrollable icon grid instead of a single column that grew with the real item
-    // count).
-    private static final int STATUS_Y = 24;
-    private static final int MANAGE_BUTTON_OFFSET = 14; // the Manage button's y, relative to STATUS_Y
-    private static final int BUTTON_HEIGHT = 20;
-    private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
-    private static final int PANEL_MARGIN = 8;
-    private static final int NEXT_NEEDED_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN;
-    private static final int MISSING_ITEM_LINE_HEIGHT = 10; // "Next Needed" header line only
-    private static final int REQUIREMENTS_VIEWPORT_Y = NEXT_NEEDED_Y + MISSING_ITEM_LINE_HEIGHT + 4;
-    // Icon grid, 2026-10-22 (see this class's own "third rework" doc) -- CELL_HEIGHT matches a
-    // vanilla slot's own 18px pitch (16px icon + 2px breathing room); 3 columns fits comfortably
-    // within imageWidth(176) alongside an icon + a few digits each.
-    private static final int ICON_SIZE = 16;
-    private static final int GRID_COLUMNS = 3;
-    private static final int CELL_HEIGHT = 18;
-    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = CELL_HEIGHT * 3;
-    // Real bug, found live 2026-10-22 ("These are not lined up at all"): this used to add an extra
-    // "+14" specifically to compensate for extractBackground's own blit using "PLAYER_INV_Y - 14" as
-    // its destination -- a self-cancelling fudge that only worked if ConstructionBoxMenu's own copy
-    // of this constant was kept in perfect sync, which it wasn't (that one had drifted to a stale
-    // hardcoded value -- see that class's own doc). Confirmed against Yconomics' own working
-    // `bag.LootBagMenu`/`client.LootBagScreen` precedent that the correct rule has no fudge factor at
-    // all: the background blit destination and the real slot Y must be the exact same number. Both
-    // sides now compute this identically from the same real layout constants, and extractBackground's
-    // own blit below uses this raw value directly, no "-14".
-    private static final int PLAYER_INV_Y = REQUIREMENTS_VIEWPORT_Y + REQUIREMENTS_VIEWPORT_HEIGHT + PANEL_MARGIN;
+    // Geometry now lives in one shared place, ConstructionBoxLayout -- see that class's own doc for
+    // why (this exact "two copies of the same constants drift apart" bug hit this screen three times
+    // in one day, 2026-10-22, before this fix).
+    private static final int STATUS_Y = ConstructionBoxLayout.STATUS_Y;
+    private static final int MANAGE_BUTTON_OFFSET = ConstructionBoxLayout.MANAGE_BUTTON_OFFSET;
+    private static final int BUTTON_HEIGHT = ConstructionBoxLayout.BUTTON_HEIGHT;
+    private static final int NEXT_NEEDED_Y = ConstructionBoxLayout.NEXT_NEEDED_Y;
+    private static final int REQUIREMENTS_VIEWPORT_Y = ConstructionBoxLayout.REQUIREMENTS_VIEWPORT_Y;
+    private static final int ICON_SIZE = ConstructionBoxLayout.ICON_SIZE;
+    private static final int GRID_COLUMNS = ConstructionBoxLayout.GRID_COLUMNS;
+    private static final int CELL_HEIGHT = ConstructionBoxLayout.CELL_HEIGHT;
+    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = ConstructionBoxLayout.REQUIREMENTS_VIEWPORT_HEIGHT;
+    private static final int PLAYER_INV_Y = ConstructionBoxLayout.PLAYER_INV_Y;
+    // The solid panel strip behind the vanilla "Inventory" label (inventoryLabelY, set in the
+    // constructor below) -- real report, 2026-10-22: without it the label floats directly over the
+    // dimmed in-game background with nothing behind it, same as the status/button/requirements area
+    // above it deliberately does, but a label specifically needs to stay readable the way every other
+    // screen's own "Inventory" label already is. Matches the real texture's own 14px label/separator
+    // strip (texture y=125-139, confirmed by the same pixel-measurement that found the v=139 slot-row
+    // start -- see extractBackground's own doc).
+    private static final int LABEL_STRIP_HEIGHT = 14;
 
     private boolean manageButtonAdded;
     private int requirementsScroll;
@@ -154,7 +147,18 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         // this only ever shifted the *background art* -- exactly the "item icons are vertically away
         // from the background cells, not a rounding error" symptom reported live: a fixed 13-logical-
         // pixel offset, which multiplies out to ~50 physical pixels at a 4x GUI Scale.
-        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y, 0.0F, 139.0F, this.imageWidth, 96, 256, 256);
+        //
+        // Extended upward by LABEL_STRIP_HEIGHT, same day, separate real report ("it needs a
+        // background behind the 'Inventory' label"): this blit used to start exactly at the real slot
+        // rows (v=139, screen y=PLAYER_INV_Y), skipping the solid 14px label/separator strip (texture
+        // v=125-139) that vanilla's own chest screens always render the "Inventory" label over -- so
+        // this screen's own label floated over the plain dimmed background with nothing behind it,
+        // unlike every other screen's. Starting the source at v=125 instead (height +14 to match) and
+        // shifting the destination up by the same 14px pulls that strip in without moving the real
+        // slot rows at all: v=139 (now 14px into this wider blit) still lands at screen y=PLAYER_INV_Y
+        // exactly, same as before.
+        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y - LABEL_STRIP_HEIGHT,
+                0.0F, 125.0F, this.imageWidth, 96 + LABEL_STRIP_HEIGHT, 256, 256);
     }
 
     @Override

@@ -104,32 +104,10 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         return box.getBlockPos();
     }
 
-    // Must match ConstructionBoxScreen's own layout constants exactly (status/button/requirements-
-    // panel geometry, and the player-inventory y both mods' positioning is built around).
-    //
-    // Reworked 2026-10-22, real live feedback on the SAME screen, twice in one day: (1) "the item
-    // icons are like, 50 pixels vertically away from the background cells" -- a *different* bug, the
-    // background art sampling the wrong texture row, see ConstructionBoxScreen's own doc -- then (2),
-    // immediately after that fix shipped, "you're not using the top inventory at all, even though you
-    // were supposed to originally [remove it for more room]... you do not need to center everything
-    // horizontally, make 2 columns... you can make the resource panel scroll." The single real funnel
-    // slot (and its 35px-tall background strip) this screen opened with is gone outright -- manual
-    // funding still works via shift-click (quickMoveStack below), it just never needed a dedicated
-    // drag-target slot of its own, and that slot was the single biggest chunk of wasted vertical space
-    // on this screen. The requirements list (ConstructionBoxScreen#extractRequirements) is now a
-    // fixed-height, 2-column, scrollable viewport instead of a single column capped at a "+N more"
-    // summary -- so this constant block no longer needs to grow with the real item count at all,
-    // unlike the old MISSING_ITEMS_RESERVED_HEIGHT it replaces.
-    private static final int STATUS_Y = 24;
-    private static final int MANAGE_BUTTON_OFFSET = 14;
-    private static final int BUTTON_HEIGHT = 20;
-    private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
-    private static final int PANEL_MARGIN = 8;
-    private static final int NEXT_NEEDED_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN;
-    private static final int MISSING_ITEM_LINE_HEIGHT = 10;
-    private static final int REQUIREMENTS_VIEWPORT_Y = NEXT_NEEDED_Y + MISSING_ITEM_LINE_HEIGHT + 4;
-    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = 50;
-    private static final int PLAYER_INV_Y = REQUIREMENTS_VIEWPORT_Y + REQUIREMENTS_VIEWPORT_HEIGHT + PANEL_MARGIN;
+    // Geometry now lives in one shared place, ConstructionBoxLayout -- see that class's own doc for
+    // why (this exact "two copies of the same constants drift apart" bug hit this screen three times
+    // in one day, 2026-10-22, before this fix).
+    private static final int PLAYER_INV_Y = ConstructionBoxLayout.PLAYER_INV_Y;
 
     private void layoutSlots(Inventory inventory) {
         for (int row = 0; row < 3; row++) {
