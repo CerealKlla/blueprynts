@@ -132,31 +132,55 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
                 color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
             }
             graphics.text(font, status, leftPos + (imageWidth - font.width(status)) / 2, statusY, color);
-            extractMissingItems(graphics);
+            extractRequirements(graphics);
         }
     }
 
-    /** See this class's own "Missing-item list" doc -- up to {@link #MAX_DISPLAYED_MISSING_ITEMS} real "ItemName: N" lines, left-aligned under the Manage button. */
-    private void extractMissingItems(GuiGraphicsExtractor graphics) {
-        var missing = com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxMissingItemsState.get();
-        if (missing.isEmpty()) {
+    /**
+     * Real per-item "Cobblestone: 394/394, Stone Stair: 15/54" rows plus a "Next Needed: X" line,
+     * 2026-10-22 -- explicit user design, replacing the first version of this (missing-amount-only)
+     * the same day: "that'll help, and we could even show 'Next Needed: Stone Stair,' then it's
+     * really obvious why it's stalled" (construction now paces by real build order, see {@code
+     * ConstructionBoxBlockEntity#attemptCompletion}'s own doc -- a flat aggregate percentage no
+     * longer tells a player *which* specific item is actually blocking progress). Up to {@link
+     * #MAX_DISPLAYED_MISSING_ITEMS} total lines, left-aligned under the Manage button -- the "Next
+     * Needed" line (when there is one) takes the first slot, requirement rows fill the rest, capped
+     * with a "+N more" summary if the real list is longer.
+     */
+    private void extractRequirements(GuiGraphicsExtractor graphics) {
+        var entries = com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxRequirementsState.entries();
+        var nextNeeded = com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxRequirementsState.nextNeeded();
+        if (entries.isEmpty()) {
             return;
         }
         int lineY = topPos + MISSING_ITEMS_START_Y;
-        int shown = 0;
         int x = leftPos + 8;
-        for (var entry : missing.entrySet()) {
-            if (shown >= MAX_DISPLAYED_MISSING_ITEMS - (missing.size() > MAX_DISPLAYED_MISSING_ITEMS ? 1 : 0)) {
+        int budget = MAX_DISPLAYED_MISSING_ITEMS;
+        if (nextNeeded != null) {
+            graphics.text(font, "Next Needed: " + itemName(nextNeeded), x, lineY, 0xFFFFAA55);
+            lineY += MISSING_ITEM_LINE_HEIGHT;
+            budget--;
+        }
+        int shown = 0;
+        int rowBudget = budget - (entries.size() > budget ? 1 : 0);
+        for (var entry : entries) {
+            if (shown >= rowBudget) {
                 break;
             }
-            net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(entry.getKey()).orElse(null);
-            String name = item != null ? new net.minecraft.world.item.ItemStack(item).getHoverName().getString() : entry.getKey().toString();
-            graphics.text(font, name + ": " + entry.getValue(), x, lineY, 0xFFE0E0E0);
+            boolean satisfied = entry.supplied() >= entry.required();
+            boolean blocking = entry.itemId().equals(nextNeeded);
+            int color = blocking ? 0xFFFFAA55 : satisfied ? 0xFF55FF55 : 0xFFAAAAAA;
+            graphics.text(font, itemName(entry.itemId()) + ": " + entry.supplied() + "/" + entry.required(), x, lineY, color);
             lineY += MISSING_ITEM_LINE_HEIGHT;
             shown++;
         }
-        if (missing.size() > shown) {
-            graphics.text(font, "+" + (missing.size() - shown) + " more", x, lineY, 0xFFAAAAAA);
+        if (entries.size() > shown) {
+            graphics.text(font, "+" + (entries.size() - shown) + " more", x, lineY, 0xFFAAAAAA);
         }
+    }
+
+    private static String itemName(Identifier itemId) {
+        var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId).orElse(null);
+        return item != null ? new net.minecraft.world.item.ItemStack(item).getHoverName().getString() : itemId.toString();
     }
 }

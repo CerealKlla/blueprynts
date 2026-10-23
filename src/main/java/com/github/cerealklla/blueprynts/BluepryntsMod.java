@@ -194,9 +194,9 @@ public class BluepryntsMod {
         registrar.playToClient(com.github.cerealklla.blueprynts.construction.OpenLedgerPayload.TYPE,
                 com.github.cerealklla.blueprynts.construction.OpenLedgerPayload.STREAM_CODEC,
                 (payload, context) -> ClientConstructionRequests.requestOpenLedger(payload));
-        registrar.playToClient(com.github.cerealklla.blueprynts.construction.SyncConstructionBoxMissingItemsPayload.TYPE,
-                com.github.cerealklla.blueprynts.construction.SyncConstructionBoxMissingItemsPayload.STREAM_CODEC,
-                (payload, context) -> com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxMissingItemsState.set(payload));
+        registrar.playToClient(com.github.cerealklla.blueprynts.construction.SyncConstructionBoxRequirementsPayload.TYPE,
+                com.github.cerealklla.blueprynts.construction.SyncConstructionBoxRequirementsPayload.STREAM_CODEC,
+                (payload, context) -> com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxRequirementsState.set(payload));
 
         registrar.playToServer(com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.TYPE,
                 com.github.cerealklla.blueprynts.construction.RequestConstructionBoxTierPickerPayload.STREAM_CODEC,

@@ -179,8 +179,11 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     private int allowedTier = 1;
     // Not persisted -- purely an optimization so a redundant re-check doesn't re-run
     // RealBlueprintPlacement when nothing has actually changed; worst case after a reload it just
-    // redundantly re-pastes the same already-correct cells once, harmless.
-    private int lastBuiltPercent = -1;
+    // redundantly re-pastes the same already-correct cells once, harmless. A real cell count now
+    // (renamed from lastBuiltPercent, 2026-10-22, alongside attemptCompletion's own rework), not a
+    // percentage -- see that method's own doc for why a percentage could round two different real
+    // cell counts together on a Blueprint with more than 100 cells.
+    private int lastBuiltCells = -1;
 
     // Transaction ledger (added 2026-10-12, explicit user request) -- a standing, human-readable
     // record of every purchase/sale touching the owning plot's Shop, appended via a thin
@@ -290,7 +293,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      * progress (incremental, percentage-driven building means "Relocate Building" can now be
      * clicked mid-build, not just once finished -- real playtest request, 2026-09-29: "as soon as
      * someone hits 'Relocate Building' it needs to clear the partially built ones"). Also resets
-     * {@link #lastBuiltPercent} so the next {@link #attemptCompletion} at a new anchor
+     * {@link #lastBuiltCells} so the next {@link #attemptCompletion} at a new anchor
      * doesn't think progress already exceeds what's actually standing there. Does **not** touch
      * funding progress ({@link #required}/{@link #supplied}) -- moving the pending build location
      * doesn't refund it.
@@ -323,7 +326,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
             SiteTerrainOps.restore(level, removalSnapshot);
         }
         removalSnapshot = new TerrainSnapshot();
-        lastBuiltPercent = -1;
+        lastBuiltCells = -1;
         setChanged();
         return this;
     }
@@ -387,7 +390,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         this.pendingFacing = source.pendingFacing;
         this.tier = source.tier;
         this.allowedTier = source.allowedTier;
-        this.lastBuiltPercent = source.lastBuiltPercent;
+        this.lastBuiltCells = source.lastBuiltCells;
         this.ledger.clear();
         this.ledger.addAll(source.ledger);
         setChanged();
@@ -459,6 +462,28 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
             }
         }
         return missing;
+    }
+
+    /** Every item this box's bound Blueprint needs, full amount, regardless of how much has been supplied -- an unmodifiable view, same iteration order as {@link #required} itself. */
+    public Map<Item, Integer> requiredItems() {
+        return java.util.Collections.unmodifiableMap(required);
+    }
+
+    /** Every item actually supplied so far -- an unmodifiable view, same iteration order as {@link #supplied} itself. */
+    public Map<Item, Integer> suppliedItems() {
+        return java.util.Collections.unmodifiableMap(supplied);
+    }
+
+    /**
+     * The real item currently blocking further construction, in build-sequence order -- see {@link
+     * RealBlueprintPlacement#computeBuildStatus}'s own doc for the full "why" (explicit user design,
+     * 2026-10-22: "the BP's next missing piece is Stone Stairs, and won't progress until that's
+     * available in the box"). {@code null} if nothing is bound, or if construction is already fully
+     * caught up to {@link #supplied}'s own current stock (nothing left to block on right now, even if
+     * {@link #missingItems()} still lists items needed *later* in the build order).
+     */
+    public Identifier nextNeededItemId() {
+        return placedBlueprintName == null ? null : RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied).nextNeededItemId();
     }
 
     /**
@@ -578,25 +603,40 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     }
 
     /**
-     * Pastes the bound Blueprint up to whatever percentage its own funding currently supports.
-     * Trivially 100% if no cost is configured at all (e.g. a Blueprint with no placeable-item cells
-     * at all), so a zero-cost box still builds for free. Called after every funding change. No-op if
-     * already fully built or nothing is bound.
+     * Pastes the bound Blueprint up to wherever {@link RealBlueprintPlacement#computeBuildStatus}
+     * says current {@link #supplied} stock can actually carry it, in real build-sequence order.
+     * Trivially complete if the Blueprint has no placeable cells at all, so a zero-cost box still
+     * builds for free. Called after every funding change. No-op if already fully built or nothing is
+     * bound.
+     *
+     * <p><b>Rebuilt 2026-10-22</b> (explicit user design, replacing the old flat aggregate-percentage
+     * pacing): "it feels a little silly that I can provide half the materials (all Cobblestone) but
+     * other things are physically built as the blueprint grows from ground up... won't progress until
+     * [the next needed item is] available in the box." The old version paced the *paste* off an
+     * aggregate resource ratio (total supplied / total required, with no regard for which specific
+     * items), which could -- and did -- paste cells whose own specific material was never actually
+     * supplied, as long as *some other* item's surplus padded the aggregate ratio high enough. Now
+     * uses the exact same real build order the paste itself already walks, so a cell is only ever
+     * pasted once its own specific item is genuinely on hand.
      *
      * <p>Re-pastes into the *same* accumulated {@link #removalSnapshot} across repeated calls
      * (rather than a fresh one each time) -- {@code TerrainSnapshot#captureIfAbsent} only ever
      * records a position's *first* pre-construction state, so calling this again as funding grows
-     * correctly extends the same snapshot instead of losing track of cells captured by an earlier,
-     * lower-percentage call.
+     * correctly extends the same snapshot instead of losing track of cells captured by an earlier
+     * call. {@link #lastBuiltCells} (renamed from the old {@code lastBuiltPercent}, 2026-10-22, same
+     * reason) tracks a real cell count instead of a percentage now -- a percentage could round two
+     * genuinely different cell counts to the same displayed number on a Blueprint with more than 100
+     * cells, which would have silently skipped a redundant-paste guard it was never meant to pass.
      *
-     * @return {@code true} if this call actually completed the structure (reached 100%).
+     * @return {@code true} if this call actually completed the structure (every cell placed).
      */
     public boolean attemptCompletion(ServerLevel level) {
         if (!isFundable()) {
             return false;
         }
-        int pct = fundedPercent();
-        if (pct <= 0 || pct <= lastBuiltPercent) {
+        RealBlueprintPlacement.BuildStatus status = RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied);
+        int doneCells = status.placeableCellCount();
+        if (doneCells <= 0 || doneCells <= lastBuiltCells) {
             return false;
         }
 
@@ -613,32 +653,27 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
             return level.getBlockEntity(selfMoved.get()) instanceof ConstructionBoxBlockEntity moved && moved.attemptCompletion(level);
         }
 
-        RealBlueprintPlacement.Result result = RealBlueprintPlacement.place(level, anchorPos(), anchorFacing(), placedBlueprintName, pct, removalSnapshot);
+        RealBlueprintPlacement.Result result = RealBlueprintPlacement.placeCells(level, anchorPos(), anchorFacing(), placedBlueprintName, doneCells, removalSnapshot);
         if (result.error() != null) {
             return false;
         }
         removalSnapshot = result.snapshot();
-        lastBuiltPercent = pct;
-        if (pct >= 100) {
+        lastBuiltCells = doneCells;
+        boolean complete = status.totalCellCount() > 0 && doneCells >= status.totalCellCount();
+        if (complete) {
             blueprintPlaced = true;
             everCompleted = true;
         }
         setChanged();
-        return pct >= 100;
+        return complete;
     }
 
-    /** Overall funding percentage across every required item, 0-100; trivially 100 if nothing is required at all. */
+    /** Real build-sequence progress, 0-100 -- see {@link #attemptCompletion}'s own doc for why this is sequence-aware now, not a flat aggregate resource ratio. Trivially 100 if the Blueprint has no placeable cells at all. */
     public int fundedPercent() {
-        long totalRequired = 0;
-        long totalSupplied = 0;
-        for (Map.Entry<Item, Integer> entry : required.entrySet()) {
-            totalRequired += entry.getValue();
-            totalSupplied += suppliedAmount(entry.getKey());
-        }
-        if (totalRequired <= 0) {
+        if (placedBlueprintName == null) {
             return 100;
         }
-        return (int) Math.min(100, (100L * totalSupplied) / totalRequired);
+        return RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied).percent();
     }
 
     /**

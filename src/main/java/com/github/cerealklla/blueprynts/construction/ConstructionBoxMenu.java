@@ -56,7 +56,8 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private final Inventory inventory;
     // null until the first broadcastChanges() send -- compared by value each tick so a real payload
     // only goes out when the shortfall actually changed, not every tick regardless.
-    private java.util.Map<Item, Integer> lastSentMissing;
+    private java.util.Map<Item, Integer> lastSentSupplied;
+    private net.minecraft.resources.Identifier lastSentNextNeeded;
 
     /** Server-side: a real box backs this menu. */
     public ConstructionBoxMenu(MenuType<?> type, int containerId, Inventory inventory, ConstructionBoxBlockEntity box) {
@@ -229,18 +230,26 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         if (box == null || !(box.getLevel() instanceof ServerLevel) || !(inventory.player instanceof ServerPlayer serverPlayer)) {
             return;
         }
-        java.util.Map<Item, Integer> missing = box.missingItems();
-        if (missing.equals(lastSentMissing)) {
+        java.util.Map<Item, Integer> supplied = box.suppliedItems();
+        net.minecraft.resources.Identifier nextNeeded = box.nextNeededItemId();
+        // supplied alone is enough to diff against -- required only ever changes via a rebind, which
+        // always resets supplied to {} in the same call, so a required-only change still shows up
+        // here as a real supplied change too.
+        if (supplied.equals(lastSentSupplied) && java.util.Objects.equals(nextNeeded, lastSentNextNeeded)) {
             return;
         }
-        lastSentMissing = new java.util.LinkedHashMap<>(missing);
+        lastSentSupplied = new java.util.LinkedHashMap<>(supplied);
+        lastSentNextNeeded = nextNeeded;
         java.util.List<String> ids = new java.util.ArrayList<>();
-        java.util.List<Integer> amounts = new java.util.ArrayList<>();
-        missing.forEach((item, amount) -> {
+        java.util.List<Integer> suppliedAmounts = new java.util.ArrayList<>();
+        java.util.List<Integer> requiredAmounts = new java.util.ArrayList<>();
+        box.requiredItems().forEach((item, amount) -> {
             ids.add(BuiltInRegistries.ITEM.getKey(item).toString());
-            amounts.add(amount);
+            suppliedAmounts.add(box.suppliedAmount(item));
+            requiredAmounts.add(amount);
         });
-        PacketDistributor.sendToPlayer(serverPlayer, new SyncConstructionBoxMissingItemsPayload(ids, amounts));
+        String nextNeededId = nextNeeded != null ? nextNeeded.toString() : "";
+        PacketDistributor.sendToPlayer(serverPlayer, new SyncConstructionBoxRequirementsPayload(ids, suppliedAmounts, requiredAmounts, nextNeededId));
     }
 
     /** Server: reads live values straight from the box. Client: stores whatever the server last synced. */

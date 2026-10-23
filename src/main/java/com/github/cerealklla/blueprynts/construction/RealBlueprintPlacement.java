@@ -1,8 +1,10 @@
 package com.github.cerealklla.blueprynts.construction;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -12,7 +14,11 @@ import com.github.cerealklla.blueprynts.blueprint.BlueprintStorage;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Rotation;
 
 /**
@@ -66,6 +72,14 @@ public final class RealBlueprintPlacement {
     private static boolean isUntouchedFloorSentinel(BlueprintCell cell) {
         return cell.state().isPresent()
                 && cell.state().get().is(com.github.cerealklla.blueprynts.registration.ModBlocks.EXISTING_BLOCK.get());
+    }
+
+    /** Every non-pre-existing cell, ascending {@link BlueprintCell#sequence()} order -- shared by every method here that needs to walk a Blueprint's own real build order. */
+    private static List<BlueprintCell> sortedPlaceableCells(BlueprintRecord record) {
+        return record.cells().stream()
+                .filter(cell -> !cell.isPreExisting())
+                .sorted(Comparator.comparingInt(BlueprintCell::sequence))
+                .toList();
     }
 
     public record Result(String error, TerrainSnapshot snapshot) {
@@ -123,10 +137,7 @@ public final class RealBlueprintPlacement {
                 ? Rotation.NONE
                 : SiteTerrainOps.rotationBetween(record.facing(), intoSite);
 
-        List<BlueprintCell> placeable = record.cells().stream()
-                .filter(cell -> !cell.isPreExisting())
-                .sorted(Comparator.comparingInt(BlueprintCell::sequence))
-                .toList();
+        List<BlueprintCell> placeable = sortedPlaceableCells(record);
         int cutoff = Math.max(0, Math.min(placeable.size(), (int) Math.ceil(placeable.size() * (pct / 100.0))));
 
         TerrainSnapshot snapshot = accumulateInto != null ? accumulateInto : new TerrainSnapshot();
@@ -141,6 +152,94 @@ public final class RealBlueprintPlacement {
             level.setBlock(worldPos, cell.state().orElseThrow().rotate(cellRotation), 3);
         }
         return new Result(null, snapshot);
+    }
+
+    /**
+     * Same as {@link #place(ServerLevel, BlockPos, Direction, String, int, TerrainSnapshot)} but
+     * takes an exact cell cutoff directly instead of deriving one from a percentage -- added
+     * 2026-10-22 for the new sequence/material-aware build pacing (see {@code
+     * ConstructionBoxBlockEntity#attemptCompletion}'s own doc: construction now only progresses as
+     * far as {@link #computeBuildStatus} says current {@code supplied} stock can actually cover, in
+     * real build order -- a percent-based cutoff's own rounding could disagree by a cell with that
+     * exact count, which must never happen here (pasting even one cell past what's actually been
+     * paid for would materialize free materials).
+     */
+    public static Result placeCells(ServerLevel level, BlockPos boxPos, Direction boxFacing, String name, int cutoffCells, TerrainSnapshot accumulateInto) {
+        Optional<BlueprintRecord> found = BlueprintStorage.get().load(name);
+        if (found.isEmpty()) {
+            return Result.failure("No Blueprint named '" + name + "'.");
+        }
+        BlueprintRecord record = found.get();
+        Direction intoSite = boxFacing.getOpposite();
+        int groundY = SiteTerrainOps.siteFloorY(boxPos);
+        Rotation cellRotation = record.facing() == null
+                ? Rotation.NONE
+                : SiteTerrainOps.rotationBetween(record.facing(), intoSite);
+
+        List<BlueprintCell> placeable = sortedPlaceableCells(record);
+        int cutoff = Math.max(0, Math.min(placeable.size(), cutoffCells));
+
+        TerrainSnapshot snapshot = accumulateInto != null ? accumulateInto : new TerrainSnapshot();
+        for (int i = 0; i < cutoff; i++) {
+            BlueprintCell cell = placeable.get(i);
+            if (isUntouchedFloorSentinel(cell)) {
+                continue;
+            }
+            Column world = SiteTerrainOps.toWorldColumn(boxPos, intoSite, new Column(cell.relX(), cell.relZ()));
+            BlockPos worldPos = new BlockPos(world.x(), groundY + cell.relY(), world.z());
+            snapshot.captureIfAbsent(worldPos, level.getBlockState(worldPos));
+            level.setBlock(worldPos, cell.state().orElseThrow().rotate(cellRotation), 3);
+        }
+        return new Result(null, snapshot);
+    }
+
+    /**
+     * How far (in real build-sequence order) {@code supplied} stock can actually carry a Blueprint's
+     * construction right now, and -- the whole point of this, added 2026-10-22, explicit user
+     * design: "the BP's next missing piece is Stone Stairs, and won't progress until that's
+     * available in the box" -- exactly which item is the one actually blocking further progress.
+     * Walks {@link #sortedPlaceableCells}'s own real build order, consuming a working copy of
+     * {@code supplied} as it goes (an item fully used up by earlier cells can't also cover a later
+     * one); stops at the first cell whose item isn't covered. A cell with no real item form (plain
+     * air, or the {@link #isUntouchedFloorSentinel} editor placeholder) consumes nothing and never
+     * blocks -- same exclusion {@code blueprint.BlueprintResources#computeFrom} already uses for the
+     * identical reason. {@code (0, 0, null)} if {@code name} doesn't resolve to a saved Blueprint.
+     */
+    public record BuildStatus(int placeableCellCount, int totalCellCount, Identifier nextNeededItemId) {
+        /** 0-100, trivially 100 if the Blueprint has no real cells to place at all. */
+        public int percent() {
+            return totalCellCount <= 0 ? 100 : (int) Math.min(100, (100L * placeableCellCount) / totalCellCount);
+        }
+    }
+
+    public static BuildStatus computeBuildStatus(String name, Map<Item, Integer> supplied) {
+        Optional<BlueprintRecord> found = BlueprintStorage.get().load(name);
+        if (found.isEmpty()) {
+            return new BuildStatus(0, 0, null);
+        }
+        List<BlueprintCell> placeable = sortedPlaceableCells(found.get());
+        Map<Item, Integer> remaining = new HashMap<>(supplied);
+        int done = 0;
+        Identifier blocker = null;
+        for (BlueprintCell cell : placeable) {
+            if (isUntouchedFloorSentinel(cell)) {
+                done++;
+                continue;
+            }
+            Item item = cell.state().orElseThrow().getBlock().asItem();
+            if (item == Items.AIR) {
+                done++;
+                continue;
+            }
+            int have = remaining.getOrDefault(item, 0);
+            if (have <= 0) {
+                blocker = BuiltInRegistries.ITEM.getKey(item);
+                break;
+            }
+            remaining.put(item, have - 1);
+            done++;
+        }
+        return new BuildStatus(done, placeable.size(), blocker);
     }
 
     /**
