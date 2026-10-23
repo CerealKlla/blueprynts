@@ -212,9 +212,8 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
             boolean satisfied = entry.supplied() >= entry.required();
             boolean blocking = entry.itemId().equals(nextNeeded);
             int color = blocking ? 0xFFFFAA55 : satisfied ? 0xFF55FF55 : 0xFFAAAAAA;
-            String text = itemName(entry.itemId()) + ": " + entry.supplied() + "/" + entry.required();
             int colX = (i % 2 == 0) ? leftX : rightX;
-            graphics.text(font, fitText(text, colWidth), colX, rowY, color);
+            graphics.text(font, requirementLine(entry, colWidth), colX, rowY, color);
         }
         graphics.disableScissor();
 
@@ -244,11 +243,23 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
-    private String fitText(String text, int maxWidth) {
-        if (font.width(text) <= maxWidth) {
-            return text;
+    /**
+     * Real bug, found live 2026-10-22 immediately after the 2-column rework shipped: truncating the
+     * whole "Name: supplied/required" string from the end (the previous {@code fitText}) chopped off
+     * the numbers themselves whenever a name was long enough to overflow the column -- exactly the
+     * one piece of this line that actually matters, with the (less important, already-known-from-
+     * "Next Needed") item name left intact instead. The numbers are never truncated now; only the
+     * name shrinks to make room, since a name that doesn't fully fit is still recognizable abbreviated
+     * (and the full name is always available as "Next Needed" when this item is the blocking one).
+     */
+    private String requirementLine(ClientConstructionBoxRequirementsState.Entry entry, int maxWidth) {
+        String numbers = ": " + entry.supplied() + "/" + entry.required();
+        int nameWidth = Math.max(0, maxWidth - font.width(numbers));
+        String name = itemName(entry.itemId());
+        if (font.width(name) > nameWidth) {
+            name = font.plainSubstrByWidth(name, Math.max(0, nameWidth - font.width("..."))) + "...";
         }
-        return font.plainSubstrByWidth(text, maxWidth - font.width("...")) + "...";
+        return name + numbers;
     }
 
     private static String itemName(Identifier itemId) {
