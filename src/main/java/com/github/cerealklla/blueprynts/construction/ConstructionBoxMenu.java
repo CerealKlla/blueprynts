@@ -110,14 +110,25 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // Must match ConstructionBoxScreen's own layout constants exactly (funding-slot y, and the
     // player-inventory y both mods' text/background positioning is built around).
     private static final int FUNDING_SLOT_Y = 18;
-    // Reworked 2026-10-12 -- this screen now shows a single "Manage" button (gated on canManage())
-    // instead of four, which used to keep outgrowing this constant every time one was added (132 ->
-    // 156 -> 180, each one landing short again) -- see ConstructionBoxScreen's own doc. Must match
-    // that class's own copy of this constant exactly -- including MISSING_ITEMS_RESERVED_HEIGHT
-    // (added 2026-10-22 for the new per-item missing list), which both sides add identically so
-    // whatever relative offset already existed between the two copies of this constant is preserved.
+    // Reworked 2026-10-22 -- real bug, found live ("These are not lined up at all") the same day the
+    // missing-item list below was added: this constant used to be a stale hardcoded `124`, while
+    // ConstructionBoxScreen's own copy was separately *computed* from STATUS_Y/MANAGE_BUTTON_OFFSET/
+    // BUTTON_HEIGHT/PANEL_MARGIN and came out to 100 -- a real, pre-existing 24px mismatch between
+    // "where the background panel art is drawn" and "where the real slots actually render," just not
+    // visually obvious enough before to get reported. Confirmed against Yconomics' own working
+    // `bag.LootBagMenu`/`client.LootBagScreen` precedent (a real vanilla `ChestMenu`, so provably
+    // correct) that the right rule is simpler than either side was doing: the background blit
+    // destination and the real slot Y must be EXACTLY the same number, no fudge-factor offset either
+    // direction -- ConstructionBoxScreen's own old "+14"/"-14" dance (meant to compensate for this
+    // same constant drifting, but never actually kept in sync) is gone too, see that class's own doc.
+    // Both sides now compute this identically from the same real layout constants.
+    private static final int STATUS_Y = 40;
+    private static final int MANAGE_BUTTON_OFFSET = 14;
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int PANEL_MARGIN = 12;
+    private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
     private static final int MISSING_ITEMS_RESERVED_HEIGHT = 60;
-    private static final int PLAYER_INV_Y = 124 + MISSING_ITEMS_RESERVED_HEIGHT;
+    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + MISSING_ITEMS_RESERVED_HEIGHT;
 
     private void layoutSlots(Inventory inventory) {
         addSlot(new ConstructionBoxFundingSlot(fundingContainer, 0, 8, FUNDING_SLOT_Y, this));

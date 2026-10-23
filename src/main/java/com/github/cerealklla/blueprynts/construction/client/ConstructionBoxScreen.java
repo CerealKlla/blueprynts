@@ -43,11 +43,16 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     private static final int MISSING_ITEM_LINE_HEIGHT = 10;
     private static final int MISSING_ITEMS_RESERVED_HEIGHT = MAX_DISPLAYED_MISSING_ITEMS * MISSING_ITEM_LINE_HEIGHT;
     private static final int MISSING_ITEMS_START_Y = MANAGE_BUTTON_BOTTOM + 6;
-    // +14 compensates for extractBackground's own "yo + PLAYER_INV_Y - 14" panel-position offset.
-    // MUST match ConstructionBoxMenu.PLAYER_INV_Y exactly -- that constant drives real slot/item
-    // positions, this one only drives where the background art/label are drawn; letting them diverge
-    // is exactly the "floating icons" bug described in this class's own earlier doc.
-    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + 14 + MISSING_ITEMS_RESERVED_HEIGHT;
+    // Real bug, found live 2026-10-22 ("These are not lined up at all"): this used to add an extra
+    // "+14" specifically to compensate for extractBackground's own blit using "PLAYER_INV_Y - 14" as
+    // its destination -- a self-cancelling fudge that only worked if ConstructionBoxMenu's own copy
+    // of this constant was kept in perfect sync, which it wasn't (that one had drifted to a stale
+    // hardcoded value -- see that class's own doc). Confirmed against Yconomics' own working
+    // `bag.LootBagMenu`/`client.LootBagScreen` precedent that the correct rule has no fudge factor at
+    // all: the background blit destination and the real slot Y must be the exact same number. Both
+    // sides now compute this identically from the same real layout constants, and extractBackground's
+    // own blit below uses this raw value directly, no "-14".
+    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + MISSING_ITEMS_RESERVED_HEIGHT;
 
     private boolean manageButtonAdded;
 
@@ -109,7 +114,7 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         // Player-inventory panel art, pushed down to PLAYER_INV_Y (not immediately following the
         // slice above) -- the gap between them is where the status/button render, deliberately left
         // as plain screen background rather than more (non-functional) slot art.
-        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y - 14, 0.0F, 126.0F, this.imageWidth, 96, 256, 256);
+        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y, 0.0F, 126.0F, this.imageWidth, 96, 256, 256);
     }
 
     @Override
