@@ -276,19 +276,29 @@ public class BluepryntsMod {
                     // covers a brand-new box, a mid-funding box, and an already-built box the player
                     // is deliberately changing via "Change Blueprint," all without special-casing.
                     boolean hadPriorBlueprint = box.placedBlueprintName() != null;
+                    // Both the new cost and the old (for refunding) are always recomputed fresh from
+                    // each Blueprint's own real cells (blueprint.BlueprintResources#computeFrom),
+                    // never trusted from BlueprintRecord#resources()'s own stored field -- explicit
+                    // user correction, 2026-10-22, after a real report that an older/generated
+                    // Blueprint's stored field was empty (predates it, or was written by a one-off
+                    // generator script that never computed it), making both "nothing refunded" and
+                    // "shows no required resources" happen for the same underlying reason. "It always
+                    // needed to look at the old blueprint to know the cost to refund, then the new
+                    // blueprint to show what is needed for the new structure."
+                    java.util.Map<net.minecraft.world.item.Item, Integer> oldCost = new java.util.LinkedHashMap<>();
+                    if (box.placedBlueprintName() != null) {
+                        BlueprintStorage.get().load(box.placedBlueprintName()).ifPresent(old ->
+                                com.github.cerealklla.blueprynts.blueprint.BlueprintResources.computeFrom(old.cells()).forEach((itemId, amount) ->
+                                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId).ifPresent(item -> oldCost.put(item, amount))));
+                    }
                     box = box.clearPartialConstruction(level);
                     box.setBlueprintPlaced(false);
-                    // Real material cost (2026-10-22, replacing the old Settlemynts Zone+Tier
-                    // GenericResource config table -- see ConstructionBoxBlockEntity's own doc) --
-                    // the Blueprint's own already-derived BlueprintResources#computeFrom summary
-                    // (BlueprintRecord#resources(), computed once at Save time), converted from
-                    // Identifier to the real Item.
                     java.util.Map<net.minecraft.world.item.Item, Integer> cost = new java.util.LinkedHashMap<>();
-                    found.get().resources().forEach((itemId, amount) ->
+                    com.github.cerealklla.blueprynts.blueprint.BlueprintResources.computeFrom(found.get().cells()).forEach((itemId, amount) ->
                             net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId).ifPresent(item -> cost.put(item, amount)));
                     box.setPlacedBlueprintName(payload.name());
                     box.setTier(tier);
-                    box.initializeRequirements(level, cost);
+                    box.initializeRequirements(level, cost, oldCost);
                     // "Buy all the materials needed at once when construction starts" -- pulls
                     // whatever it can for free from the plot's own boxes right now, then pushes
                     // whatever's still missing to Planned Inventory for the existing nightly

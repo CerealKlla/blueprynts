@@ -463,18 +463,31 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     /**
      * Called once, right when a Blueprint is (first bound, or rebound to a different one via
-     * "Change Blueprint") -- {@code cost} is the Blueprint's own real material list ({@code
-     * BlueprintRecord#resources()}, already computed by {@code blueprint.BlueprintResources
-     * #computeFrom} at Save time). Never recalculated afterward -- a later re-derivation (e.g. the
-     * Blueprint file itself changing) doesn't retroactively change an in-progress box's own
-     * already-agreed cost.
+     * "Change Blueprint") -- {@code cost} is the new Blueprint's own real material list, freshly
+     * recomputed by the caller via {@code blueprint.BlueprintResources#computeFrom(record.cells())}
+     * directly rather than trusted from {@code BlueprintRecord#resources()}'s own stored field (see
+     * that method's own doc for why -- a real incident, 2026-10-22: several older/generated
+     * Blueprint files on Production have an empty stored {@code resources} field, since they
+     * predate it or were written by a one-off generator script that never computed it, which made
+     * "Change Blueprint" show zero required resources for a structure that very obviously needs
+     * real materials). Never recalculated afterward -- a later re-derivation (e.g. the Blueprint
+     * file itself changing) doesn't retroactively change an in-progress box's own already-agreed
+     * cost.
      *
      * <p><b>Refunds whatever was already supplied before resetting it</b> (added 2026-10-22,
      * explicit user spec: "the resources for that blueprint should be dumped into storage boxes
      * within the plot... any excess should be placed in a pile on top of the construction site
      * box... only the resources actually used so far" -- i.e. {@link #supplied}, not the old {@link
-     * #required}) -- see {@link #refundSuppliedMaterials}. A no-op the first time a box is ever
-     * bound, since nothing's been supplied yet.
+     * #required}) -- see {@link #refundSuppliedMaterials}. {@code oldBlueprintFullCost} is the
+     * previously-bound Blueprint's own cost, freshly recomputed from ITS cells the same way --
+     * **only used as a fallback** when {@link #supplied} is empty but this box genuinely has a real
+     * completed structure standing ({@link #everCompleted}), i.e. a box whose own persisted funding
+     * bookkeeping was lost (the same legacy-data-format incident {@link #legacyFundingDataLost}
+     * documents) despite a real structure, with a real material cost, actually existing. Real
+     * report, 2026-10-22: "None of the resources were refunded by changing the blueprint" on exactly
+     * such a box -- its {@link #supplied} was empty (lost), so there was nothing to refund from at
+     * all until this fallback existed. A no-op the first time a box is ever bound (nothing supplied,
+     * no prior Blueprint to recompute a fallback from either).
      *
      * <p>Also resets {@link #everCompleted} -- real bug fixed 2026-10-22: that flag is a historical
      * "was the currently-bound Blueprint ever fully built" latch, but used to only ever get set
@@ -485,8 +498,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      * {@code api.Blueprynts#getConstructionBoxStatus}, and {@code BuildingLocatorItem}'s own
      * now-fixed "instantly completes on reposition" bug).
      */
-    public void initializeRequirements(ServerLevel level, Map<Item, Integer> cost) {
-        refundSuppliedMaterials(level);
+    public void initializeRequirements(ServerLevel level, Map<Item, Integer> cost, Map<Item, Integer> oldBlueprintFullCost) {
+        refundSuppliedMaterials(level, oldBlueprintFullCost);
         required = new LinkedHashMap<>(cost);
         supplied = new LinkedHashMap<>();
         everCompleted = false;
@@ -495,19 +508,24 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     }
 
     /**
-     * Converts {@link #supplied} into real stacks (chunked to each item's own max stack size),
-     * deposits as much as possible into the owning plot's own boxes for free, and piles whatever
-     * doesn't fit directly on top of this box -- "only the resources actually used so far," not the
-     * Blueprint's full new cost. A no-op if nothing's currently supplied. If this box's plot
+     * Converts whichever of {@link #supplied} (real, tracked progress -- the normal case) or {@code
+     * oldBlueprintFullCost} (the legacy-data fallback, see {@link #initializeRequirements}'s own
+     * doc) applies into real stacks (chunked to each item's own max stack size), deposits as much
+     * as possible into the owning plot's own boxes for free, and piles whatever doesn't fit directly
+     * on top of this box. A no-op if neither source has anything to refund. If this box's plot
      * identity isn't known (see this class's own doc), everything piles on top instead of being
      * deposited -- same degrade-gracefully shape as {@link #pullFromPlotAndSync}.
      */
-    private void refundSuppliedMaterials(ServerLevel level) {
-        if (supplied.isEmpty()) {
+    private void refundSuppliedMaterials(ServerLevel level, Map<Item, Integer> oldBlueprintFullCost) {
+        Map<Item, Integer> toRefund = supplied;
+        if (toRefund.isEmpty() && everCompleted && oldBlueprintFullCost != null && !oldBlueprintFullCost.isEmpty()) {
+            toRefund = oldBlueprintFullCost;
+        }
+        if (toRefund.isEmpty()) {
             return;
         }
         List<ItemStack> stacks = new ArrayList<>();
-        for (Map.Entry<Item, Integer> entry : supplied.entrySet()) {
+        for (Map.Entry<Item, Integer> entry : toRefund.entrySet()) {
             int remaining = entry.getValue();
             int maxStack = entry.getKey().getDefaultMaxStackSize();
             while (remaining > 0) {
