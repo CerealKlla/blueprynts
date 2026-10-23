@@ -7,9 +7,11 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * A funding progress readout plus a single "Manage" button -- replaces the old plain-{@code
@@ -30,9 +32,17 @@ import net.minecraft.world.entity.player.Inventory;
  * make the resource panel scroll." The single real funnel slot this screen opened with (see git
  * history) is gone outright -- it was background-only decoration plus one functional slot, and
  * manual funding still works fine via shift-click ({@link ConstructionBoxMenu#quickMoveStack}),
- * which never depended on it. {@link #extractRequirements} is now a fixed-height, 2-column,
- * mouse-wheel-scrollable viewport rather than a single column capped at a "+N more" summary -- this
- * screen's total height no longer grows with the real required-item count at all.
+ * which never depended on it. {@link #extractRequirements} is now a fixed-height, mouse-wheel-
+ * scrollable viewport rather than a single column capped at a "+N more" summary -- this screen's
+ * total height no longer grows with the real required-item count at all.
+ *
+ * <p><b>Reworked a third time, same day</b> -- the 2-column text rows above were replaced outright
+ * with a {@code GRID_COLUMNS}-wide grid of real item icons ({@link GuiGraphicsExtractor#item}) plus
+ * just the "supplied/required" numbers next to each one, per explicit request ("would it be easy
+ * enough to just have the image of the item with the numbers next to it? that would save space").
+ * An icon alone can't distinguish near-identical items (e.g. stone-brick variants), so hovering one
+ * shows the real item's own vanilla tooltip, same precedent {@code kyt.loadout.client
+ * .LoadoutEditorScreen}'s own item grid already established.
  */
 public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionBoxMenu> {
 
@@ -40,7 +50,7 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
 
     // Must match ConstructionBoxMenu#layoutSlots' own copies of these constants exactly -- see that
     // class's own doc for the 2026-10-22 rework (funnel slot removed, requirements panel is now a
-    // fixed-height 2-column scroll view instead of a single column that grew with the real item
+    // fixed-height scrollable icon grid instead of a single column that grew with the real item
     // count).
     private static final int STATUS_Y = 24;
     private static final int MANAGE_BUTTON_OFFSET = 14; // the Manage button's y, relative to STATUS_Y
@@ -48,9 +58,15 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
     private static final int PANEL_MARGIN = 8;
     private static final int NEXT_NEEDED_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN;
-    private static final int MISSING_ITEM_LINE_HEIGHT = 10;
+    private static final int MISSING_ITEM_LINE_HEIGHT = 10; // "Next Needed" header line only
     private static final int REQUIREMENTS_VIEWPORT_Y = NEXT_NEEDED_Y + MISSING_ITEM_LINE_HEIGHT + 4;
-    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = 50;
+    // Icon grid, 2026-10-22 (see this class's own "third rework" doc) -- CELL_HEIGHT matches a
+    // vanilla slot's own 18px pitch (16px icon + 2px breathing room); 3 columns fits comfortably
+    // within imageWidth(176) alongside an icon + a few digits each.
+    private static final int ICON_SIZE = 16;
+    private static final int GRID_COLUMNS = 3;
+    private static final int CELL_HEIGHT = 18;
+    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = CELL_HEIGHT * 3;
     // Real bug, found live 2026-10-22 ("These are not lined up at all"): this used to add an extra
     // "+14" specifically to compensate for extractBackground's own blit using "PLAYER_INV_Y - 14" as
     // its destination -- a self-cancelling fudge that only worked if ConstructionBoxMenu's own copy
@@ -156,35 +172,27 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
                 color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
             }
             graphics.text(font, status, leftPos + (imageWidth - font.width(status)) / 2, statusY, color);
-            extractRequirements(graphics);
+            extractRequirements(graphics, mouseX, mouseY);
         }
     }
 
     /**
-     * Real per-item "Cobblestone: 394/394, Stone Stair: 15/54" rows plus a "Next Needed: X" header,
-     * 2026-10-22 -- explicit user design, replacing the first version of this (missing-amount-only)
-     * the same day: "that'll help, and we could even show 'Next Needed: Stone Stair,' then it's
-     * really obvious why it's stalled" (construction now paces by real build order, see {@code
-     * ConstructionBoxBlockEntity#attemptCompletion}'s own doc -- a flat aggregate percentage no
-     * longer tells a player *which* specific item is actually blocking progress).
-     *
-     * <p><b>Reworked the same day, second round</b> -- the first version was a single column capped
-     * at {@code MAX_DISPLAYED_MISSING_ITEMS} with a "+N more" summary, which both wasted the screen's
-     * full width and never actually showed a long blueprint's complete requirement list. "Next
-     * Needed" stays pinned as a header immediately below the Manage button; the real requirement rows
-     * below it are laid out two per line and clipped to a fixed-height viewport
-     * ({@link #REQUIREMENTS_VIEWPORT_HEIGHT}), scrolled via {@link #mouseScrolled} -- so this panel's
-     * height is fixed regardless of how many distinct item types a blueprint ends up needing.
+     * A "Next Needed: X" header, pinned immediately below the Manage button, plus a {@link
+     * #GRID_COLUMNS}-wide grid of real item icons with their "supplied/required" numbers next to
+     * each one -- 2026-10-22, replacing an earlier all-text version the same day (see this class's
+     * own "reworked a third time" doc for the full history: a single column capped at "+N more",
+     * then 2 columns of full "Name: supplied/required" text, then this). Clipped to a fixed-height
+     * viewport ({@link #REQUIREMENTS_VIEWPORT_HEIGHT}) and scrolled via {@link #mouseScrolled} --
+     * this panel's height is fixed regardless of how many distinct item types a blueprint needs.
      */
-    private void extractRequirements(GuiGraphicsExtractor graphics) {
+    private void extractRequirements(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         var entries = ClientConstructionBoxRequirementsState.entries();
         var nextNeeded = ClientConstructionBoxRequirementsState.nextNeeded();
         if (entries.isEmpty()) {
             return;
         }
-        int x = leftPos + 8;
         if (nextNeeded != null) {
-            graphics.text(font, "Next Needed: " + itemName(nextNeeded), x, topPos + NEXT_NEEDED_Y, 0xFFFFAA55);
+            graphics.text(font, "Next Needed: " + itemName(nextNeeded), leftPos + 8, topPos + NEXT_NEEDED_Y, 0xFFFFAA55);
         }
 
         int viewportTop = topPos + REQUIREMENTS_VIEWPORT_Y;
@@ -192,28 +200,31 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         int viewportLeft = leftPos;
         int viewportRight = leftPos + imageWidth;
 
-        int rows = (entries.size() + 1) / 2;
-        int contentHeight = rows * MISSING_ITEM_LINE_HEIGHT;
+        int rows = (entries.size() + GRID_COLUMNS - 1) / GRID_COLUMNS;
+        int contentHeight = rows * CELL_HEIGHT;
         int maxScroll = Math.max(0, contentHeight - REQUIREMENTS_VIEWPORT_HEIGHT);
         requirementsScroll = Math.max(0, Math.min(maxScroll, requirementsScroll));
 
-        int colWidth = (imageWidth - 24) / 2;
-        int leftX = leftPos + 8;
-        int rightX = leftX + colWidth + 8;
+        int colWidth = (imageWidth - 16) / GRID_COLUMNS;
 
         graphics.enableScissor(viewportLeft, viewportTop, viewportRight, viewportBottom);
         for (int i = 0; i < entries.size(); i++) {
-            int row = i / 2;
-            int rowY = viewportTop - requirementsScroll + row * MISSING_ITEM_LINE_HEIGHT;
-            if (rowY + MISSING_ITEM_LINE_HEIGHT < viewportTop || rowY > viewportBottom) {
+            int cellX = leftPos + 8 + (i % GRID_COLUMNS) * colWidth;
+            int cellY = viewportTop - requirementsScroll + (i / GRID_COLUMNS) * CELL_HEIGHT;
+            if (cellY + ICON_SIZE < viewportTop || cellY > viewportBottom) {
                 continue;
             }
             var entry = entries.get(i);
+            ItemStack stack = itemStack(entry.itemId());
+            graphics.item(stack, cellX, cellY);
             boolean satisfied = entry.supplied() >= entry.required();
             boolean blocking = entry.itemId().equals(nextNeeded);
             int color = blocking ? 0xFFFFAA55 : satisfied ? 0xFF55FF55 : 0xFFAAAAAA;
-            int colX = (i % 2 == 0) ? leftX : rightX;
-            graphics.text(font, requirementLine(entry, colWidth), colX, rowY, color);
+            graphics.text(font, entry.supplied() + "/" + entry.required(), cellX + ICON_SIZE + 2, cellY + 4, color);
+            if (mouseX >= cellX && mouseX < cellX + ICON_SIZE && mouseY >= cellY && mouseY < cellY + ICON_SIZE
+                    && mouseY >= viewportTop && mouseY < viewportBottom) {
+                graphics.setTooltipForNextFrame(font, stack, mouseX, mouseY);
+            }
         }
         graphics.disableScissor();
 
@@ -233,37 +244,23 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         int viewportBottom = viewportTop + REQUIREMENTS_VIEWPORT_HEIGHT;
         if (mouseX >= leftPos && mouseX <= leftPos + imageWidth && mouseY >= viewportTop && mouseY <= viewportBottom) {
             var entries = ClientConstructionBoxRequirementsState.entries();
-            int rows = (entries.size() + 1) / 2;
-            int contentHeight = rows * MISSING_ITEM_LINE_HEIGHT;
+            int rows = (entries.size() + GRID_COLUMNS - 1) / GRID_COLUMNS;
+            int contentHeight = rows * CELL_HEIGHT;
             int maxScroll = Math.max(0, contentHeight - REQUIREMENTS_VIEWPORT_HEIGHT);
-            int delta = (int) Math.signum(scrollY) * MISSING_ITEM_LINE_HEIGHT;
+            int delta = (int) Math.signum(scrollY) * CELL_HEIGHT;
             requirementsScroll = Math.max(0, Math.min(maxScroll, requirementsScroll - delta));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
-    /**
-     * Real bug, found live 2026-10-22 immediately after the 2-column rework shipped: truncating the
-     * whole "Name: supplied/required" string from the end (the previous {@code fitText}) chopped off
-     * the numbers themselves whenever a name was long enough to overflow the column -- exactly the
-     * one piece of this line that actually matters, with the (less important, already-known-from-
-     * "Next Needed") item name left intact instead. The numbers are never truncated now; only the
-     * name shrinks to make room, since a name that doesn't fully fit is still recognizable abbreviated
-     * (and the full name is always available as "Next Needed" when this item is the blocking one).
-     */
-    private String requirementLine(ClientConstructionBoxRequirementsState.Entry entry, int maxWidth) {
-        String numbers = ": " + entry.supplied() + "/" + entry.required();
-        int nameWidth = Math.max(0, maxWidth - font.width(numbers));
-        String name = itemName(entry.itemId());
-        if (font.width(name) > nameWidth) {
-            name = font.plainSubstrByWidth(name, Math.max(0, nameWidth - font.width("..."))) + "...";
-        }
-        return name + numbers;
+    private static ItemStack itemStack(Identifier itemId) {
+        var item = BuiltInRegistries.ITEM.getOptional(itemId).orElse(null);
+        return item != null ? new ItemStack(item) : ItemStack.EMPTY;
     }
 
     private static String itemName(Identifier itemId) {
-        var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId).orElse(null);
-        return item != null ? new net.minecraft.world.item.ItemStack(item).getHoverName().getString() : itemId.toString();
+        ItemStack stack = itemStack(itemId);
+        return stack.isEmpty() ? itemId.toString() : stack.getHoverName().getString();
     }
 }
