@@ -114,7 +114,20 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
         // Player-inventory panel art, pushed down to PLAYER_INV_Y (not immediately following the
         // slice above) -- the gap between them is where the status/button render, deliberately left
         // as plain screen background rather than more (non-functional) slot art.
-        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y, 0.0F, 126.0F, this.imageWidth, 96, 256, 256);
+        //
+        // Real bug, found 2026-10-22 by measuring generic_54.png's actual pixels (not eyeballing it --
+        // a real report that survived two earlier "fixes" turned out to need this): the source V here
+        // used to be 126, derived by subtracting this blit's own height (96) from the texture's known
+        // bottom-of-content boundary (222) -- but 222 - 96 lands 13px *above* the real top of the
+        // player-inventory block. The texture's actual row layout, confirmed by sampling column x=8
+        // down the whole image: 6 container rows end at y=125, then a 14px label/gap separator, then
+        // the real 3-row-inventory+hotbar block starts at y=139 (matches vanilla's own generic
+        // `inventoryTop = 18 + rows*18 + 13` formula for a full 6-row container: 18+108+13=139). Real
+        // slot items render at the correct screen Y regardless (Slot x/y is unaffected by this), so
+        // this only ever shifted the *background art* -- exactly the "item icons are vertically away
+        // from the background cells, not a rounding error" symptom reported live: a fixed 13-logical-
+        // pixel offset, which multiplies out to ~50 physical pixels at a 4x GUI Scale.
+        graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, xo, yo + PLAYER_INV_Y, 0.0F, 139.0F, this.imageWidth, 96, 256, 256);
     }
 
     @Override
