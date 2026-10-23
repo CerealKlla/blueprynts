@@ -25,10 +25,16 @@ public final class ConstructionBoxLayout {
     public static final int REQUIREMENTS_VIEWPORT_Y = NEXT_NEEDED_Y + MISSING_ITEM_LINE_HEIGHT + 4;
 
     // Requirements icon grid, 2026-10-22 -- CELL_HEIGHT matches a vanilla slot's own 18px pitch
-    // (16px icon + 2px breathing room); 3 columns fits comfortably within imageWidth(176) alongside
-    // an icon plus a few digits each.
+    // (16px icon + 2px breathing room).
+    //
+    // Real bug, found live immediately after this shipped: 3 columns gave each cell only ~53px,
+    // which overlapped the next cell's icon for any real 3-digit/3-digit pair ("301/301" rendered as
+    // "301/30" with the next icon drawn over the cut-off digit). 2 columns (80px/cell) comfortably
+    // fits even a 4-digit/4-digit pair ("9999/9999"), which a large blueprint's real totals can
+    // plausibly reach -- scrolling (already built) absorbs the extra rows this costs, so there's no
+    // real downside to sizing for the worst case here.
     public static final int ICON_SIZE = 16;
-    public static final int GRID_COLUMNS = 3;
+    public static final int GRID_COLUMNS = 2;
     public static final int CELL_HEIGHT = 18;
     public static final int REQUIREMENTS_VIEWPORT_HEIGHT = CELL_HEIGHT * 3;
 
