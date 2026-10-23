@@ -4,8 +4,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
-import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -17,21 +15,21 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * The Construction Box's own screen -- one funnel slot (any item the bound Blueprint still needs,
- * see {@link ConstructionBoxFundingSlot}'s own doc) plus an overall funding-percentage readout, plus
- * the player's own inventory/hotbar. Required/Supplied are now keyed by real {@link Item}s derived
- * from the Blueprint itself (2026-10-22, see {@code ConstructionBoxBlockEntity}'s own doc) rather
- * than a small fixed {@code GenericResource} enum.
+ * The Construction Box's own screen -- a funding-progress readout plus the player's own
+ * inventory/hotbar. Required/Supplied are now keyed by real {@link Item}s derived from the
+ * Blueprint itself (2026-10-22, see {@code ConstructionBoxBlockEntity}'s own doc) rather than a
+ * small fixed {@code GenericResource} enum.
  *
- * <p><b>Per-item missing list, added 2026-10-22</b> -- this screen originally shipped showing only
- * the aggregate {@link #fundedPercent()}, flagged as a known simplification since there's no cheap
- * way to sync an arbitrary-length list through {@link ContainerData} (a fixed-size int array). A
- * real live report the same day ("doesn't show me the required materials anywhere") confirmed that
+ * <p><b>Per-item requirements list, added 2026-10-22</b> -- this screen originally shipped showing
+ * only the aggregate {@link #fundedPercent()}, flagged as a known simplification since there's no
+ * cheap way to sync an arbitrary-length list through {@link ContainerData} (a fixed-size int array).
+ * A real live report the same day ("doesn't show me the required materials anywhere") confirmed that
  * gap was a genuine usability problem, not just cosmetic -- fixed via {@link
- * SyncConstructionBoxMissingItemsPayload} instead, sent from {@link #broadcastChanges()} (vanilla's
+ * SyncConstructionBoxRequirementsPayload} instead, sent from {@link #broadcastChanges()} (vanilla's
  * own per-tick "refresh anything stale for this open menu" hook -- the exact same mechanism {@link
  * ContainerData} itself already rides on, not a new poll) whenever the real shortfall has changed
- * since the last send.
+ * since the last send. The single real funnel slot this screen originally opened with is gone as of
+ * the same day's later follow-up -- see this class's own layout-constants doc.
  */
 public class ConstructionBoxMenu extends AbstractContainerMenu {
 
@@ -46,7 +44,6 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private static final int DATA_SIZE = 8;
 
     private final ConstructionBoxBlockEntity box; // null on the client's own reconstructed instance
-    private final Container fundingContainer;
     private final ContainerData data;
     // Computed once at open time (permission doesn't change mid-session) -- only meaningful
     // server-side; the client's own reconstructed menu always has box == null here and instead reads
@@ -64,7 +61,6 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         super(type, containerId);
         this.box = box;
         this.inventory = inventory;
-        this.fundingContainer = new SimpleContainer(1);
         boolean computedCanManage = false;
         if (box != null && box.getLevel() instanceof ServerLevel serverLevel) {
             BlockPos checkPos = resolvePermissionCheckPos(box);
@@ -108,31 +104,34 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         return box.getBlockPos();
     }
 
-    // Must match ConstructionBoxScreen's own layout constants exactly (funding-slot y, and the
-    // player-inventory y both mods' text/background positioning is built around).
-    private static final int FUNDING_SLOT_Y = 18;
-    // Reworked 2026-10-22 -- real bug, found live ("These are not lined up at all") the same day the
-    // missing-item list below was added: this constant used to be a stale hardcoded `124`, while
-    // ConstructionBoxScreen's own copy was separately *computed* from STATUS_Y/MANAGE_BUTTON_OFFSET/
-    // BUTTON_HEIGHT/PANEL_MARGIN and came out to 100 -- a real, pre-existing 24px mismatch between
-    // "where the background panel art is drawn" and "where the real slots actually render," just not
-    // visually obvious enough before to get reported. Confirmed against Yconomics' own working
-    // `bag.LootBagMenu`/`client.LootBagScreen` precedent (a real vanilla `ChestMenu`, so provably
-    // correct) that the right rule is simpler than either side was doing: the background blit
-    // destination and the real slot Y must be EXACTLY the same number, no fudge-factor offset either
-    // direction -- ConstructionBoxScreen's own old "+14"/"-14" dance (meant to compensate for this
-    // same constant drifting, but never actually kept in sync) is gone too, see that class's own doc.
-    // Both sides now compute this identically from the same real layout constants.
-    private static final int STATUS_Y = 40;
+    // Must match ConstructionBoxScreen's own layout constants exactly (status/button/requirements-
+    // panel geometry, and the player-inventory y both mods' positioning is built around).
+    //
+    // Reworked 2026-10-22, real live feedback on the SAME screen, twice in one day: (1) "the item
+    // icons are like, 50 pixels vertically away from the background cells" -- a *different* bug, the
+    // background art sampling the wrong texture row, see ConstructionBoxScreen's own doc -- then (2),
+    // immediately after that fix shipped, "you're not using the top inventory at all, even though you
+    // were supposed to originally [remove it for more room]... you do not need to center everything
+    // horizontally, make 2 columns... you can make the resource panel scroll." The single real funnel
+    // slot (and its 35px-tall background strip) this screen opened with is gone outright -- manual
+    // funding still works via shift-click (quickMoveStack below), it just never needed a dedicated
+    // drag-target slot of its own, and that slot was the single biggest chunk of wasted vertical space
+    // on this screen. The requirements list (ConstructionBoxScreen#extractRequirements) is now a
+    // fixed-height, 2-column, scrollable viewport instead of a single column capped at a "+N more"
+    // summary -- so this constant block no longer needs to grow with the real item count at all,
+    // unlike the old MISSING_ITEMS_RESERVED_HEIGHT it replaces.
+    private static final int STATUS_Y = 24;
     private static final int MANAGE_BUTTON_OFFSET = 14;
     private static final int BUTTON_HEIGHT = 20;
-    private static final int PANEL_MARGIN = 12;
     private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
-    private static final int MISSING_ITEMS_RESERVED_HEIGHT = 60;
-    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + MISSING_ITEMS_RESERVED_HEIGHT;
+    private static final int PANEL_MARGIN = 8;
+    private static final int NEXT_NEEDED_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN;
+    private static final int MISSING_ITEM_LINE_HEIGHT = 10;
+    private static final int REQUIREMENTS_VIEWPORT_Y = NEXT_NEEDED_Y + MISSING_ITEM_LINE_HEIGHT + 4;
+    private static final int REQUIREMENTS_VIEWPORT_HEIGHT = 50;
+    private static final int PLAYER_INV_Y = REQUIREMENTS_VIEWPORT_Y + REQUIREMENTS_VIEWPORT_HEIGHT + PANEL_MARGIN;
 
     private void layoutSlots(Inventory inventory) {
-        addSlot(new ConstructionBoxFundingSlot(fundingContainer, 0, 8, FUNDING_SLOT_Y, this));
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, PLAYER_INV_Y + row * 18));
@@ -195,24 +194,21 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
 
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
-        // Shift-clicking the funnel row does nothing special (it's a funnel, not real storage --
-        // ConstructionBoxFundingSlot#set clears it back to empty the instant a stack lands, so that
-        // index is never actually holding anything to move out). Shift-clicking from the player's
-        // own inventory routes through the same item-matching the direct-drag path uses (real bug,
-        // 2026-09-30: this used to unconditionally no-op, so shift-click -- the instinctive way to
-        // "manually add" items to any vanilla container -- silently did nothing with zero feedback).
-        if (index >= 1) {
-            Slot sourceSlot = slots.get(index);
-            if (sourceSlot.hasItem()) {
-                ItemStack sourceStack = sourceSlot.getItem();
-                int remaining = remaining(sourceStack.getItem());
-                if (remaining > 0) {
-                    int deposit = Math.min(remaining, sourceStack.getCount());
-                    onDeposit(sourceStack.getItem(), deposit);
-                    sourceStack.shrink(deposit);
-                    sourceSlot.set(sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-                    sourceSlot.setChanged();
-                }
+        // The dedicated funnel slot this screen used to open with is gone (2026-10-22, see this
+        // class's own layout-constants doc) -- every slot is now a real player-inventory slot, so
+        // shift-clicking any of them deposits a matching stack directly (real bug, 2026-09-30: this
+        // used to unconditionally no-op, so shift-click -- the instinctive way to "manually add" items
+        // to any vanilla container -- silently did nothing with zero feedback).
+        Slot sourceSlot = slots.get(index);
+        if (sourceSlot.hasItem()) {
+            ItemStack sourceStack = sourceSlot.getItem();
+            int remaining = remaining(sourceStack.getItem());
+            if (remaining > 0) {
+                int deposit = Math.min(remaining, sourceStack.getCount());
+                onDeposit(sourceStack.getItem(), deposit);
+                sourceStack.shrink(deposit);
+                sourceSlot.set(sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
+                sourceSlot.setChanged();
             }
         }
         return ItemStack.EMPTY;
