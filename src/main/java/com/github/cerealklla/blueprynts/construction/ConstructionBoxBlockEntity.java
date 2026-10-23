@@ -49,13 +49,15 @@ import net.minecraft.world.level.storage.ValueOutput;
  * {@link com.github.cerealklla.blueprynts.blueprint.BlueprintMaterialCost}), not an abstract
  * {@code GenericResource} (Wood/Stone) category sourced from a hand-tuned Settlemynts Zone+Tier cost
  * table -- "attempt to buy the components which make up the blueprint." There is also no more
- * elapsed-time construction gate ({@code minTimeTicks}/{@code maxTimeTicks}/{@code
+ * free/automatic elapsed-time *funding* gate ({@code minTimeTicks}/{@code maxTimeTicks}/{@code
  * accumulatedTimeTicks} all removed) -- "no longer need the 'NPC owned buildings take longer to
- * build' concept"; construction progress is now purely {@link #fundedPercent()}, so a box that gets
- * fully funded (by any combination of the plot's own stock, the settlement economy, or a player's
- * own deposit) paste immediately. This also means the box never needs a {@code BlockEntityTicker} at
- * all any more -- see {@code ConstructionBoxBlock}'s own doc (standing rule, 2026-10-22: avoid
- * non-event-driven chron jobs wherever a real event can trigger the same work instead).
+ * build' concept." Construction progress is driven by {@link #fundedPercent()}/{@link
+ * RealBlueprintPlacement.BuildStatus}, not a separate time budget -- but the *placement itself* still
+ * paces at a slow, steady drip rather than pasting everything the instant it's affordable (real
+ * correction, 2026-10-23, after this doc's own removal of the funding time-gate was read too broadly:
+ * "the existing auto-build mechanic was a very slim tick, so wasn't a problem to keep around"). See
+ * {@link #attemptCompletion}'s own {@code CELLS_PER_STEP} doc and {@code ConstructionBoxBlock
+ * #getTicker} (restored the same day) for how.
  *
  * <p>Funding itself is now layered, event-driven, same precedent as {@code
  * watchtower.WatchTowerBeaconBlockEntity}'s fuel: (1) a manual player deposit (drag or shift-click)
@@ -630,15 +632,34 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      *
      * @return {@code true} if this call actually completed the structure (every cell placed).
      */
+    // Real report, 2026-10-23: "the building is actually building immediately once materials are
+    // provided, and not slowly 1 block at a time like it's supposed to be." The 2026-10-22 funding
+    // rework's own doc explains removing minTimeTicks/accumulatedTimeTicks -- but that was about
+    // killing the old *free, automatic, NPC-owned-buildings-take-longer* funding-pacing concept, not
+    // the separate, generic "paces the visual build at a cheap steady drip" mechanic every box
+    // (player- or NPC-owned alike) always had -- explicit correction: "It was not supposed to remove
+    // the slowly building mechanic... the existing auto-build mechanic was a very slim tick, so
+    // wasn't a problem to keep around." This constant restores that drip, capping every single call
+    // (whether triggered by a funding event or the restored once-a-second ticker in {@code
+    // ConstructionBoxBlock#getTicker}) to advance at most this many cells, rather than jumping
+    // straight to however much the current supply can afford. The ticker is what keeps a
+    // fully-funded box actually finishing (same reasoning the old {@code tickConstruction} doc gave:
+    // without it, a box with no further deposits coming would stall one cell short forever) -- it
+    // costs nothing once a box is complete, since {@link #isFundable()} already short-circuits this
+    // method to a cheap no-op by then, satisfying "stop once the structure completes" without any
+    // separate flag.
+    private static final int CELLS_PER_STEP = 1;
+
     public boolean attemptCompletion(ServerLevel level) {
         if (!isFundable()) {
             return false;
         }
         RealBlueprintPlacement.BuildStatus status = RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied);
-        int doneCells = status.placeableCellCount();
-        if (doneCells <= 0 || doneCells <= lastBuiltCells) {
+        int affordable = status.placeableCellCount();
+        if (affordable <= 0 || affordable <= lastBuiltCells) {
             return false;
         }
+        int doneCells = Math.min(affordable, lastBuiltCells + CELLS_PER_STEP);
 
         // Guard against pasting over a Building Supply Box (this one or another) sitting somewhere
         // inside the incoming footprint -- real bug, 2026-09-30: moving the box into the build area

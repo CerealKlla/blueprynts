@@ -14,6 +14,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.phys.BlockHitResult;
@@ -59,10 +61,25 @@ public class ConstructionBoxBlock extends HorizontalDirectionalBlock implements 
         return new ConstructionBoxBlockEntity(pos, state);
     }
 
-    // No BlockEntityTicker of any kind (removed 2026-10-22) -- the old once-a-second re-check only
-    // ever existed to re-apply elapsed-time construction gating, which no longer exists at all (see
-    // ConstructionBoxBlockEntity's own doc). Funding is now purely event-driven: a deposit, a
-    // bind/rebind, or a Settlemynts-notified plot-stock change each call attemptCompletion directly.
+    // Restored 2026-10-23 (real report: "building immediately once materials are provided, and not
+    // slowly 1 block at a time like it's supposed to be") -- removing this 2026-10-22 was conflating
+    // two different things: the old free/automatic NPC-funding-pacing concept (genuinely removed,
+    // correctly) and this separate, generic "cheap once-a-second re-check so a fully-funded box keeps
+    // placing cells instead of stalling one short forever" mechanic, which every box (player- or
+    // NPC-owned) always had and was explicitly meant to stay -- see ConstructionBoxBlockEntity
+    // #attemptCompletion's own doc for the real per-call cell cap this re-check now drives.
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
+        if (level.isClientSide() || type != com.github.cerealklla.blueprynts.registration.ModBlockEntities.CONSTRUCTION_BOX.get()) {
+            return null;
+        }
+        return (BlockEntityTicker<T>) (BlockEntityTicker<ConstructionBoxBlockEntity>) (lvl, pos, st, box) -> {
+            if (lvl instanceof net.minecraft.server.level.ServerLevel serverLevel && lvl.getGameTime() % 20 == 0) {
+                box.attemptCompletion(serverLevel);
+            }
+        };
+    }
 
     @Override
     public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
