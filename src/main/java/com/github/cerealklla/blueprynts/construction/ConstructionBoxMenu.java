@@ -1,7 +1,9 @@
 package com.github.cerealklla.blueprynts.construction;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -12,18 +14,24 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * The Construction Box's own screen -- one funnel slot (any item the bound Blueprint still needs,
  * see {@link ConstructionBoxFundingSlot}'s own doc) plus an overall funding-percentage readout, plus
  * the player's own inventory/hotbar. Required/Supplied are now keyed by real {@link Item}s derived
  * from the Blueprint itself (2026-10-22, see {@code ConstructionBoxBlockEntity}'s own doc) rather
- * than a small fixed {@code GenericResource} enum -- there's no cheap way to sync an arbitrary-length
- * per-item breakdown through {@link ContainerData} (a fixed-size int array) the way the old two-row
- * Wood/Stone display did, so this screen deliberately shows only the aggregate {@link #fundedPercent()}
- * now, not a per-item list -- a known, flagged simplification, not an oversight (see decisions.md).
- * Everything else syncs the same way it always did: through {@link ContainerData}, not a custom
- * network payload, so values stay live while the screen is open.
+ * than a small fixed {@code GenericResource} enum.
+ *
+ * <p><b>Per-item missing list, added 2026-10-22</b> -- this screen originally shipped showing only
+ * the aggregate {@link #fundedPercent()}, flagged as a known simplification since there's no cheap
+ * way to sync an arbitrary-length list through {@link ContainerData} (a fixed-size int array). A
+ * real live report the same day ("doesn't show me the required materials anywhere") confirmed that
+ * gap was a genuine usability problem, not just cosmetic -- fixed via {@link
+ * SyncConstructionBoxMissingItemsPayload} instead, sent from {@link #broadcastChanges()} (vanilla's
+ * own per-tick "refresh anything stale for this open menu" hook -- the exact same mechanism {@link
+ * ContainerData} itself already rides on, not a new poll) whenever the real shortfall has changed
+ * since the last send.
  */
 public class ConstructionBoxMenu extends AbstractContainerMenu {
 
@@ -45,11 +53,16 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // the real value through SyncedData, same as boxPos()/everCompleted() below. See
     // bridge.SettlemyntsPermissionBridge's own doc for why Settlemynts-not-loaded defaults to true.
     private final boolean canManage;
+    private final Inventory inventory;
+    // null until the first broadcastChanges() send -- compared by value each tick so a real payload
+    // only goes out when the shortfall actually changed, not every tick regardless.
+    private java.util.Map<Item, Integer> lastSentMissing;
 
     /** Server-side: a real box backs this menu. */
     public ConstructionBoxMenu(MenuType<?> type, int containerId, Inventory inventory, ConstructionBoxBlockEntity box) {
         super(type, containerId);
         this.box = box;
+        this.inventory = inventory;
         this.fundingContainer = new SimpleContainer(1);
         boolean computedCanManage = false;
         if (box != null && box.getLevel() instanceof ServerLevel serverLevel) {
@@ -100,8 +113,11 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     // Reworked 2026-10-12 -- this screen now shows a single "Manage" button (gated on canManage())
     // instead of four, which used to keep outgrowing this constant every time one was added (132 ->
     // 156 -> 180, each one landing short again) -- see ConstructionBoxScreen's own doc. Must match
-    // that class's own copy of this constant exactly.
-    private static final int PLAYER_INV_Y = 124;
+    // that class's own copy of this constant exactly -- including MISSING_ITEMS_RESERVED_HEIGHT
+    // (added 2026-10-22 for the new per-item missing list), which both sides add identically so
+    // whatever relative offset already existed between the two copies of this constant is preserved.
+    private static final int MISSING_ITEMS_RESERVED_HEIGHT = 60;
+    private static final int PLAYER_INV_Y = 124 + MISSING_ITEMS_RESERVED_HEIGHT;
 
     private void layoutSlots(Inventory inventory) {
         addSlot(new ConstructionBoxFundingSlot(fundingContainer, 0, 8, FUNDING_SLOT_Y, this));
@@ -193,6 +209,27 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     @Override
     public boolean stillValid(Player player) {
         return box == null || !box.isRemoved();
+    }
+
+    /** See this class's own "Per-item missing list" doc. No-op client-side and for the client's own reconstructed menu (box == null). */
+    @Override
+    public void broadcastChanges() {
+        super.broadcastChanges();
+        if (box == null || !(box.getLevel() instanceof ServerLevel) || !(inventory.player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+        java.util.Map<Item, Integer> missing = box.missingItems();
+        if (missing.equals(lastSentMissing)) {
+            return;
+        }
+        lastSentMissing = new java.util.LinkedHashMap<>(missing);
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.List<Integer> amounts = new java.util.ArrayList<>();
+        missing.forEach((item, amount) -> {
+            ids.add(BuiltInRegistries.ITEM.getKey(item).toString());
+            amounts.add(amount);
+        });
+        PacketDistributor.sendToPlayer(serverPlayer, new SyncConstructionBoxMissingItemsPayload(ids, amounts));
     }
 
     /** Server: reads live values straight from the box. Client: stores whatever the server last synced. */

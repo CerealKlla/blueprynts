@@ -34,11 +34,20 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
     private static final int BUTTON_HEIGHT = 20;
     private static final int PANEL_MARGIN = 12; // real clearance between the button's bottom and the inventory panel
     private static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
+    // Missing-item list, added 2026-10-22 (real report: "doesn't show me the required materials
+    // anywhere" -- see ConstructionBoxMenu's own doc for the full account). A fixed reserved block,
+    // not a dynamic one -- required (and so the maximum possible missing-item count) is only ever
+    // set once at bind time and never grows afterward, so a fixed cap sized at open time is safe;
+    // anything beyond it is summarized as "+N more" rather than growing the screen.
+    private static final int MAX_DISPLAYED_MISSING_ITEMS = 6;
+    private static final int MISSING_ITEM_LINE_HEIGHT = 10;
+    private static final int MISSING_ITEMS_RESERVED_HEIGHT = MAX_DISPLAYED_MISSING_ITEMS * MISSING_ITEM_LINE_HEIGHT;
+    private static final int MISSING_ITEMS_START_Y = MANAGE_BUTTON_BOTTOM + 6;
     // +14 compensates for extractBackground's own "yo + PLAYER_INV_Y - 14" panel-position offset.
     // MUST match ConstructionBoxMenu.PLAYER_INV_Y exactly -- that constant drives real slot/item
     // positions, this one only drives where the background art/label are drawn; letting them diverge
     // is exactly the "floating icons" bug described in this class's own earlier doc.
-    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + 14;
+    private static final int PLAYER_INV_Y = MANAGE_BUTTON_BOTTOM + PANEL_MARGIN + 14 + MISSING_ITEMS_RESERVED_HEIGHT;
 
     private boolean manageButtonAdded;
 
@@ -118,6 +127,31 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
                 color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
             }
             graphics.text(font, status, leftPos + (imageWidth - font.width(status)) / 2, statusY, color);
+            extractMissingItems(graphics);
+        }
+    }
+
+    /** See this class's own "Missing-item list" doc -- up to {@link #MAX_DISPLAYED_MISSING_ITEMS} real "ItemName: N" lines, left-aligned under the Manage button. */
+    private void extractMissingItems(GuiGraphicsExtractor graphics) {
+        var missing = com.github.cerealklla.blueprynts.construction.client.ClientConstructionBoxMissingItemsState.get();
+        if (missing.isEmpty()) {
+            return;
+        }
+        int lineY = topPos + MISSING_ITEMS_START_Y;
+        int shown = 0;
+        int x = leftPos + 8;
+        for (var entry : missing.entrySet()) {
+            if (shown >= MAX_DISPLAYED_MISSING_ITEMS - (missing.size() > MAX_DISPLAYED_MISSING_ITEMS ? 1 : 0)) {
+                break;
+            }
+            net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(entry.getKey()).orElse(null);
+            String name = item != null ? new net.minecraft.world.item.ItemStack(item).getHoverName().getString() : entry.getKey().toString();
+            graphics.text(font, name + ": " + entry.getValue(), x, lineY, 0xFFE0E0E0);
+            lineY += MISSING_ITEM_LINE_HEIGHT;
+            shown++;
+        }
+        if (missing.size() > shown) {
+            graphics.text(font, "+" + (missing.size() - shown) + " more", x, lineY, 0xFFAAAAAA);
         }
     }
 }
