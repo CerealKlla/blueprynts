@@ -150,6 +150,24 @@ public final class ShopSeedCatalogs {
 
     private static final List<String> FARM_PRODUCE = List.of("wheat", "potato", "carrot", "beetroot", "melon_slice");
 
+    /**
+     * Real Seed items (added 2026-10-28, Plant Selection, explicit user spec: "All Seeds should be
+     * listed for sale by default from Farm plots, with 0 preferred inventory") -- {@code
+     * SEED_STOCK = 0} is the "0 preferred inventory" itself: a real, priced, sellable listing that
+     * starts with zero physical stock, so nothing is ever conjured for free -- only what the worker
+     * NPC's Bonus Seed roll (see {@code farm.FarmerWorkGoal#harvest}) or a player actually deposits
+     * ever shows up to sell. Pumpkin/Wheat/Beetroot/Melon match {@code farm.FarmCropSpecies#ALL}'s
+     * own 4 real seed items (Potato/Carrot have no distinct Seeds item -- their own produce item,
+     * already listed in {@link #FARM_PRODUCE} above, doubles as the planting material). Torchflower
+     * Seeds/Pitcher Pod are listed too even though no Farm worker here can grow either (same
+     * established precedent {@link #FARM_PRODUCE}'s own Carrot entry already set -- "still a real,
+     * generally-grown [item] a farm shop should offer, just always priced as imported"), always at
+     * the exotic tier since neither has a real "local to this biome" concept.
+     */
+    private static final List<String> FARM_SEEDS = List.of(
+            "wheat_seeds", "beetroot_seeds", "melon_seeds", "pumpkin_seeds", "torchflower_seeds", "pitcher_pod");
+    private static final int SEED_STOCK = 0;
+
     private static List<SeedListing> farmListings(ServerLevel level, BlockPos plotAnchor) {
         String localProduce = localCropItem(level, plotAnchor);
         List<SeedListing> listings = new java.util.ArrayList<>();
@@ -159,7 +177,24 @@ public final class ShopSeedCatalogs {
                     ShopResource.ofItem(Identifier.withDefaultNamespace(produce)),
                     local ? LOCAL_CROP_PRICE : EXOTIC_CROP_PRICE, CROP_STOCK));
         }
+        String localSeed = localSeedItem(level, plotAnchor);
+        for (String seed : FARM_SEEDS) {
+            boolean local = seed.equals(localSeed);
+            listings.add(SeedListing.ofResource(
+                    ShopResource.ofItem(Identifier.withDefaultNamespace(seed)),
+                    local ? LOCAL_CROP_PRICE : EXOTIC_CROP_PRICE, SEED_STOCK));
+        }
         return listings;
+    }
+
+    /** The real Seed item matching {@link #localCropItem}'s own biome pick, for pricing the matching Seed listing as local instead of exotic -- {@code null} for Potato/Carrot (no distinct Seeds item), which simply never matches any entry in {@link #FARM_SEEDS}. */
+    private static String localSeedItem(ServerLevel level, BlockPos pos) {
+        return switch (localCropItem(level, pos)) {
+            case "wheat" -> "wheat_seeds";
+            case "beetroot" -> "beetroot_seeds";
+            case "melon_slice" -> "melon_seeds";
+            default -> null;
+        };
     }
 
     /** Mirrors {@code farm.FarmCropSpecies#chooseFor}'s own biome logic exactly, duplicated here per the same precedent {@link #localWoodSpecies} already set. */
