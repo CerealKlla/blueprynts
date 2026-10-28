@@ -485,7 +485,38 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
      * {@link #missingItems()} still lists items needed *later* in the build order).
      */
     public Identifier nextNeededItemId() {
-        return placedBlueprintName == null ? null : RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied).nextNeededItemId();
+        RealBlueprintPlacement.BuildStatus status = cachedBuildStatus();
+        return status == null ? null : status.nextNeededItemId();
+    }
+
+    // Real server crash, 2026-10-28 ("A single server tick took 60.00 seconds... forcibly
+    // shutdown"): RealBlueprintPlacement#computeBuildStatus resolves its Blueprint via
+    // BlueprintStorage#load, which is explicitly documented as "not a cache -- every read/write
+    // goes straight to disk," a full directory walk + JSON-decode of EVERY saved Blueprint file.
+    // That's fine for its intended occasional callers (a picker screen), but this class calls it
+    // from BOTH ConstructionBoxMenu#broadcastChanges (nextNeededItemId) AND vanilla's own generic
+    // ContainerData#get (fundedPercent, read every tick by AbstractContainerMenu's own broadcast
+    // loop too) -- meaning every tick, for every player with a Construction Box menu open, this
+    // mod was re-scanning and re-parsing the ENTIRE Blueprint store from scratch, twice. With
+    // enough accumulated Blueprints on disk this degrades badly and, under enough concurrent
+    // load, can take long enough to trip the server watchdog outright. The result only ever
+    // depends on placedBlueprintName (changes on rebind) and supplied (changes on deposit) --
+    // cached here, invalidated by comparing against a snapshot of those two instead of
+    // recomputing unconditionally every call.
+    private RealBlueprintPlacement.BuildStatus cachedBuildStatus;
+    private String cachedBuildStatusBlueprintName;
+    private Map<Item, Integer> cachedBuildStatusSupplied;
+
+    private RealBlueprintPlacement.BuildStatus cachedBuildStatus() {
+        if (placedBlueprintName == null) {
+            return null;
+        }
+        if (!placedBlueprintName.equals(cachedBuildStatusBlueprintName) || !supplied.equals(cachedBuildStatusSupplied)) {
+            cachedBuildStatus = RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied);
+            cachedBuildStatusBlueprintName = placedBlueprintName;
+            cachedBuildStatusSupplied = new java.util.LinkedHashMap<>(supplied);
+        }
+        return cachedBuildStatus;
     }
 
     /**
@@ -654,7 +685,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         if (!isFundable()) {
             return false;
         }
-        RealBlueprintPlacement.BuildStatus status = RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied);
+        RealBlueprintPlacement.BuildStatus status = cachedBuildStatus();
         int affordable = status.placeableCellCount();
         if (affordable <= 0 || affordable <= lastBuiltCells) {
             return false;
@@ -691,10 +722,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
 
     /** Real build-sequence progress, 0-100 -- see {@link #attemptCompletion}'s own doc for why this is sequence-aware now, not a flat aggregate resource ratio. Trivially 100 if the Blueprint has no placeable cells at all. */
     public int fundedPercent() {
-        if (placedBlueprintName == null) {
-            return 100;
-        }
-        return RealBlueprintPlacement.computeBuildStatus(placedBlueprintName, supplied).percent();
+        RealBlueprintPlacement.BuildStatus status = cachedBuildStatus();
+        return status == null ? 100 : status.percent();
     }
 
     /**
