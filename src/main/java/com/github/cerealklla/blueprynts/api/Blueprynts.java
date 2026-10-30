@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.github.cerealklla.blueprynts.BluepryntsMod;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintType;
 import com.github.cerealklla.blueprynts.blueprint.BlueprintTypeRegistry;
 import com.github.cerealklla.blueprynts.construction.ConstructionBoxBlockEntity;
@@ -14,9 +15,13 @@ import com.github.cerealklla.blueprynts.registration.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.GlobalPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueInput;
 
 /**
  * The stable public entry point for other mods to integrate with Blueprynts -- the open {@link
@@ -203,5 +208,41 @@ public final class Blueprynts {
         if (level.getBlockEntity(boxPos) instanceof ConstructionBoxBlockEntity box) {
             box.setAllowedTier(tier);
         }
+    }
+
+    /**
+     * Moves {@code oldPos}'s Building Supply Box to {@code newPos}, preserving its full state (bound
+     * Blueprint, funding/build progress, ledger, plot identity -- everything the block entity's own
+     * save/load already round-trips) and re-pointing {@link ConstructionBoxIndex} at the new
+     * position. Added 2026-10-29 for Settlemynts' {@code debug.DebugCommands#resetPlotStructures} --
+     * a Nether-founded plot's box ended up right under the world's ceiling (see that command's own
+     * doc for the full incident), and this is the general "move this box somewhere else, keep
+     * everything about it" primitive that fix needed. This is a direct move with no player/Locator
+     * interaction at all -- the existing {@code SupplyBoxLocatorItem} player-facing relocation flow
+     * is untouched.
+     *
+     * @return {@code false} if {@code oldPos} has no loaded Building Supply Box, {@code newPos}
+     *         already has something else there, or {@code newPos} equals {@code oldPos} (nothing to do).
+     */
+    public static boolean relocateConstructionBox(ServerLevel level, BlockPos oldPos, BlockPos newPos) {
+        if (oldPos.equals(newPos) || !(level.getBlockEntity(oldPos) instanceof ConstructionBoxBlockEntity box)
+                || !level.getBlockState(newPos).isAir()) {
+            return false;
+        }
+        BlockState state = level.getBlockState(oldPos);
+        CompoundTag savedData = box.saveCustomOnly(level.registryAccess());
+        UUID id = box.constructionId();
+        level.removeBlock(oldPos, false);
+        level.setBlock(newPos, state, 3);
+        if (level.getBlockEntity(newPos) instanceof ConstructionBoxBlockEntity newBox) {
+            try (ProblemReporter.ScopedCollector reporter = new ProblemReporter.ScopedCollector(newBox.problemPath(), BluepryntsMod.LOGGER)) {
+                newBox.loadCustomOnly(TagValueInput.create(reporter, level.registryAccess(), savedData));
+            }
+            newBox.setChanged();
+        }
+        if (id != null) {
+            ConstructionBoxIndex.get(level.getServer()).put(id, GlobalPos.of(level.dimension(), newPos));
+        }
+        return true;
     }
 }
