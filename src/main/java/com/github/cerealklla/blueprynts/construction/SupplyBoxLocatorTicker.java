@@ -63,7 +63,7 @@ public final class SupplyBoxLocatorTicker {
 
             PlotArea area = PendingSupplyBoxRelocation.peekPlotArea(constructionId);
             GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "supply_zone", ZONE_STATE,
-                    area == null ? List.of() : interiorOutline(area));
+                    area == null ? List.of() : interiorOutline(area), (int) Math.floor(player.getY()));
 
             BlockPos target = raytraceGround(player, level);
             if (target == null) {
@@ -72,7 +72,7 @@ public final class SupplyBoxLocatorTicker {
             }
             boolean fits = area == null || area.contains(target.getX(), target.getZ());
             GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "supply_footprint",
-                    fits ? FIT_STATE : NO_FIT_STATE, List.of(new Column(target.getX(), target.getZ())));
+                    fits ? FIT_STATE : NO_FIT_STATE, List.of(new Column(target.getX(), target.getZ())), target.getY());
         }
     }
 

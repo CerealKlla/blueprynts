@@ -66,19 +66,73 @@ public class GhostBuildingPreviewEntity extends Display.BlockDisplay {
                 marker -> viewerId.equals(marker.viewerId) && role.equals(marker.role));
     }
 
-    /** Discards every existing marker for this (viewer, role), then rebuilds one per given world (x, z) at ground height -- an empty list just clears it. */
-    public static void regenerate(ServerLevel level, UUID viewerId, String role, BlockState state, List<Column> cells) {
+    // Matches Settlemynts' own identical fix (util.GroundHeightFinder, see that class's own doc for
+    // the full write-up) -- generous enough to find a genuine nearby gap without reaching into some
+    // unrelated terrain feature far away if nothing reasonable exists near the reference at all.
+    private static final int GROUND_SEARCH_RADIUS_BLOCKS = 24;
+
+    /**
+     * Discards every existing marker for this (viewer, role), then rebuilds one per given world
+     * (x, z) at ground height near {@code referenceY} -- an empty list just clears it.
+     *
+     * @param referenceY real bug fix, 2026-10-29: used to be a plain {@code
+     *                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES} lookup, scanning down from the
+     *                    level's absolute top -- wrong in the Nether (hits the solid roof first,
+     *                    see Settlemynts' own {@code util.GroundHeightFinder} for the full incident)
+     *                    and, more generally, wrong for any reference point genuinely standing in
+     *                    open air (a cave, a tunnel, a cliffside build) rather than open sky, since
+     *                    it could tunnel through solid rock looking for a surface further away than
+     *                    a walkable gap in the other direction. Now searches outward from {@code
+     *                    referenceY} in both directions for the nearest genuinely walkable gap --
+     *                    callers pass the viewing player's own current Y, a real position they're
+     *                    already standing at.
+     */
+    public static void regenerate(ServerLevel level, UUID viewerId, String role, BlockState state, List<Column> cells, int referenceY) {
         for (GhostBuildingPreviewEntity existing : findByViewerAndRole(level, viewerId, role)) {
             existing.discard();
         }
         for (Column cell : cells) {
-            // MOTION_BLOCKING_NO_LEAVES, not WORLD_SURFACE -- WORLD_SURFACE lands on any non-air
-            // block, including leaves and non-solid plants, floating this preview marker up in a
-            // tree canopy instead of on the real ground (2026-09-30 fix, same root cause found/fixed
-            // across Settlemynts' own ground-placement call sites the same day).
-            int groundY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cell.x(), cell.z());
+            int groundY = findGroundNear(level, cell.x(), cell.z(), referenceY);
             create(level, cell.x(), groundY, cell.z(), viewerId, role, state);
         }
+    }
+
+    private static int findGroundNear(ServerLevel level, int x, int z, int referenceY) {
+        int minY = level.getMinY();
+        int maxY = level.getMaxY();
+        for (int d = 0; d <= GROUND_SEARCH_RADIUS_BLOCKS; d++) {
+            int up = referenceY + d;
+            if (up <= maxY && isWalkableSpace(level, x, up, z)) {
+                return up;
+            }
+            if (d > 0) {
+                int down = referenceY - d;
+                if (down >= minY && isWalkableSpace(level, x, down, z)) {
+                    return down;
+                }
+            }
+        }
+        // Last-resort fallback -- bounded near referenceY, never the level's absolute top.
+        int top = Math.min(maxY, referenceY + 8);
+        net.minecraft.core.BlockPos.MutableBlockPos pos = new net.minecraft.core.BlockPos.MutableBlockPos(x, top, z);
+        for (int y = top; y >= minY; y--) {
+            pos.setY(y);
+            if (isSolid(level, pos)) {
+                return y + 1;
+            }
+        }
+        return referenceY;
+    }
+
+    /** {@code y} itself is open (non-solid, non-leaf) and {@code y - 1} is real solid support -- i.e. {@code y} is somewhere you could actually stand. */
+    private static boolean isWalkableSpace(ServerLevel level, int x, int y, int z) {
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        return !isSolid(level, pos) && isSolid(level, pos.below());
+    }
+
+    private static boolean isSolid(ServerLevel level, net.minecraft.core.BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return !state.is(net.minecraft.tags.BlockTags.LEAVES) && !state.getCollisionShape(level, pos).isEmpty();
     }
 
     public static void clear(ServerLevel level, UUID viewerId, String role) {

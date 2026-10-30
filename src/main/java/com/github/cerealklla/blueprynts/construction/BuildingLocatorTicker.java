@@ -74,8 +74,9 @@ public final class BuildingLocatorTicker {
             }
 
             BuildableArea area = box.buildableArea();
+            int playerY = (int) Math.floor(player.getY());
             GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "zone", ZONE_STATE,
-                    area == null ? List.of() : rectangleOutline(area));
+                    area == null ? List.of() : rectangleOutline(area), playerY);
 
             Direction facing = level.getBlockState(boxPos.get()).getValue(HorizontalDirectionalBlock.FACING);
             Direction intoSite = facing.getOpposite();
@@ -83,12 +84,12 @@ public final class BuildingLocatorTicker {
 
             BlockPos anchor = raytraceGround(player, level);
             if (anchor == null) {
-                GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "footprint", FIT_STATE, List.of());
+                GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "footprint", FIT_STATE, List.of(), playerY);
                 continue;
             }
             BuildingFootprintCheck check = BuildingFootprintCheck.evaluate(area, anchor, intoSite, size);
             GhostBuildingPreviewEntity.regenerate(level, player.getUUID(), "footprint",
-                    check.fits() ? FIT_STATE : NO_FIT_STATE, check.outlineCells());
+                    check.fits() ? FIT_STATE : NO_FIT_STATE, check.outlineCells(), anchor.getY());
         }
     }
 
