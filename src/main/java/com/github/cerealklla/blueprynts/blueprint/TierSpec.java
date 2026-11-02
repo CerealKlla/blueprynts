@@ -67,7 +67,11 @@ public enum TierSpec {
             // Tier 1 up to {5,20} at Tier 5, three middle tiers interpolated, flagged tunable like
             // every other entry in this table.
             Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "watch_tower"),
-            new int[][] {{0, 10}, {1, 13}, {3, 15}, {4, 18}, {5, 20}});
+            new int[][] {{0, 10}, {1, 13}, {3, 15}, {4, 18}, {5, 20}},
+            // Murmur Tower (2026-11-02) -- placeholder/tunable vertical envelope, mirroring Watch
+            // Tower's own shape since both are a tall, lightly-garrisoned civic structure.
+            Identifier.fromNamespaceAndPath(BluepryntsMod.MODID, "murmur_tower"),
+            new int[][] {{0, 10}, {1, 12}, {2, 14}, {3, 16}, {4, 18}});
 
     /** Type-aware height above ground -- checks {@link #HEIGHT_OVERRIDE_BY_TIER} first, falling back to this Tier's own shared {@link #heightAboveGround()}. */
     public static int heightAboveGround(BlueprintType type, TierSpec tier) {

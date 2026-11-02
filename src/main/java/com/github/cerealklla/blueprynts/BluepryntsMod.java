@@ -166,6 +166,13 @@ public class BluepryntsMod {
         // generically off the bridged ZoneType, no new per-type logic needed there.
         BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "watch_tower"), "Watch Tower", 1.0, true));
 
+        // Murmur Tower (explicit user request, 2026-11-02) -- a settlement-broadcast Plot Type (see
+        // Settlemynts' own CLAUDE.md/design-document.md for the full Murmur Crystal/Tower feature).
+        // npcOwnedOnly=true per the same already-confirmed design-doc decision as Watch Tower --
+        // always a settlement-funded civic utility, never a player-owned business. Footprint/height
+        // lives in TierSpec's own override map, not here.
+        BlueprintTypeRegistry.register(new BlueprintType(Identifier.fromNamespaceAndPath(MODID, "murmur_tower"), "Murmur Tower", 1.0, true));
+
         // Guarded so a Settlemynts-less server never force-loads its classes -- see
         // bridge.SettlemyntsZoneBridge's own doc.
         if (ModList.get().isLoaded("settlemynts")) {
