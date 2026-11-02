@@ -172,10 +172,15 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
                 status = "Funding data unreadable -- use Change Blueprint to recompute";
                 color = 0xFFFF5555;
             } else {
-                status = "Construction progress: " + menu.fundedPercent() + "%";
-                color = menu.isFullyFunded() ? 0xFF55FF55 : 0xFFAAAAAA;
+                int built = menu.builtPercent();
+                status = "Built: " + built + "%   Funded: " + menu.fundedPercent() + "%";
+                color = built >= 100 ? 0xFF55FF55 : 0xFFAAAAAA;
             }
             graphics.text(font, status, leftPos + (imageWidth - font.width(status)) / 2, statusY, color);
+            if (!menu.legacyFundingDataLost() && menu.builtPercent() < 100) {
+                String eta = "ETA: " + formatEta(menu.estimatedSecondsRemaining());
+                graphics.text(font, eta, leftPos + (imageWidth - font.width(eta)) / 2, statusY + font.lineHeight + 2, 0xFFAAAAAA);
+            }
             extractRequirements(graphics, mouseX, mouseY);
         }
     }
@@ -256,6 +261,16 @@ public class ConstructionBoxScreen extends AbstractContainerScreen<ConstructionB
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    /** {@code "45s"}/{@code "3m 05s"} -- {@link ConstructionBoxMenu#estimatedSecondsRemaining} is always a real seconds count, never pre-formatted, so every renderer of it needs this. */
+    private static String formatEta(int totalSeconds) {
+        if (totalSeconds <= 0) {
+            return "any moment now";
+        }
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return minutes > 0 ? minutes + "m " + String.format("%02d", seconds) + "s" : seconds + "s";
     }
 
     private static ItemStack itemStack(Identifier itemId) {

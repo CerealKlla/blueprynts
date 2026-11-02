@@ -16,7 +16,10 @@ public final class ConstructionBoxLayout {
     }
 
     public static final int STATUS_Y = 24;
-    public static final int MANAGE_BUTTON_OFFSET = 14;
+    // 14 -> 25, 2026-11-02: a second status line (the live ETA, under the Built/Funded line) needed
+    // room below STATUS_Y before the Manage button -- bumping this one shared constant pushes the
+    // button, and everything derived off MANAGE_BUTTON_BOTTOM below it, down together automatically.
+    public static final int MANAGE_BUTTON_OFFSET = 25;
     public static final int BUTTON_HEIGHT = 20;
     public static final int MANAGE_BUTTON_BOTTOM = STATUS_Y + MANAGE_BUTTON_OFFSET + BUTTON_HEIGHT;
     public static final int PANEL_MARGIN = 8;

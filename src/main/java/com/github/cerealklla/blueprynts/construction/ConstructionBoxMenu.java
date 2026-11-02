@@ -41,7 +41,9 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
     private static final int EVER_COMPLETED_INDEX = 5;
     private static final int CAN_MANAGE_INDEX = 6;
     private static final int LEGACY_FUNDING_DATA_LOST_INDEX = 7;
-    private static final int DATA_SIZE = 8;
+    private static final int BUILT_PERCENT_INDEX = 8;
+    private static final int SECONDS_REMAINING_INDEX = 9;
+    private static final int DATA_SIZE = 10;
 
     private final ConstructionBoxBlockEntity box; // null on the client's own reconstructed instance
     private final ContainerData data;
@@ -170,6 +172,16 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
         return data.get(LEGACY_FUNDING_DATA_LOST_INDEX) != 0;
     }
 
+    /** How much has actually been physically pasted, 0-100 -- see {@code ConstructionBoxBlockEntity#builtPercent}'s own doc for why this is distinct from {@link #fundedPercent}. */
+    public int builtPercent() {
+        return data.get(BUILT_PERCENT_INDEX);
+    }
+
+    /** Real seconds until the drip catches up to current funding -- see {@code ConstructionBoxBlockEntity#estimatedSecondsRemaining}'s own doc. Ticks down live, same mechanism as {@link #fundedPercent}'s own sync. */
+    public int estimatedSecondsRemaining() {
+        return data.get(SECONDS_REMAINING_INDEX);
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         // The dedicated funnel slot this screen used to open with is gone (2026-10-22, see this
@@ -255,6 +267,12 @@ public class ConstructionBoxMenu extends AbstractContainerMenu {
             }
             if (index == LEGACY_FUNDING_DATA_LOST_INDEX) {
                 return box.legacyFundingDataLost() ? 1 : 0;
+            }
+            if (index == BUILT_PERCENT_INDEX) {
+                return box.builtPercent();
+            }
+            if (index == SECONDS_REMAINING_INDEX) {
+                return box.estimatedSecondsRemaining();
             }
             return canManage ? 1 : 0;
         }

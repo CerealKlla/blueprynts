@@ -727,6 +727,45 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     }
 
     /**
+     * How much of the Blueprint has actually been physically pasted, 0-100 -- distinct from {@link
+     * #fundedPercent}, which only measures how far current supply *could* cover the build, not how
+     * much of it {@link #attemptCompletion}'s own 1-cell/real-second drip has actually placed yet.
+     * Real live-test confusion, 2026-11-02: "Construction progress: 100%" on {@code
+     * client.ConstructionBoxScreen} was read as "fully built," when it only ever meant "fully
+     * funded" -- these two numbers can legitimately disagree for a long stretch on a large
+     * Blueprint. Trivially 100 if nothing's bound, matching {@link #fundedPercent}'s own convention.
+     */
+    public int builtPercent() {
+        RealBlueprintPlacement.BuildStatus status = cachedBuildStatus();
+        if (status == null || status.totalCellCount() <= 0) {
+            return 100;
+        }
+        int built = Math.max(0, lastBuiltCells);
+        return (int) Math.min(100, (100L * built) / status.totalCellCount());
+    }
+
+    /**
+     * Real seconds (at the drip's fixed 1-cell/real-second pace -- see {@link #attemptCompletion}'s
+     * own {@code CELLS_PER_STEP} doc) until construction catches up to whatever's *currently*
+     * funded -- not necessarily full completion, since an under-funded box will stall at that point
+     * until more materials arrive. Live-recomputed every call (cheap -- no Blueprint re-load, just
+     * arithmetic over the already-cached {@link #cachedBuildStatus}), so a synced {@code
+     * ContainerData} slot built from this naturally counts down in real time on its own, the same
+     * way a furnace's burn-time arrow already does, and naturally jumps back up if more funding
+     * arrives mid-countdown. Added 2026-11-02, explicit user request: "a time estimate remaining
+     * which updates live."
+     */
+    public int estimatedSecondsRemaining() {
+        RealBlueprintPlacement.BuildStatus status = cachedBuildStatus();
+        if (status == null) {
+            return 0;
+        }
+        int target = Math.min(status.placeableCellCount(), status.totalCellCount());
+        int built = Math.max(0, lastBuiltCells);
+        return Math.max(0, target - built);
+    }
+
+    /**
      * Re-checks completion, then pushes whatever's still missing to the owning plot's Planned
      * Inventory wishlist (a no-op if {@link #settlementCoreId}/{@link #plotId} aren't known -- see
      * this class's own doc) -- called after every funding change (a deposit, or a plot-stock pull)
