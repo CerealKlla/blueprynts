@@ -179,13 +179,27 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     // to 1 (every plot starts at Tier 1) -- see `zone.PlotRecord#tier`'s own class doc on the
     // Settlemynts side for the full split between "unlocked Tier cap" and "built Tier."
     private int allowedTier = 1;
-    // Not persisted -- purely an optimization so a redundant re-check doesn't re-run
-    // RealBlueprintPlacement when nothing has actually changed; worst case after a reload it just
-    // redundantly re-pastes the same already-correct cells once, harmless. A real cell count now
-    // (renamed from lastBuiltPercent, 2026-10-22, alongside attemptCompletion's own rework), not a
-    // percentage -- see that method's own doc for why a percentage could round two different real
-    // cell counts together on a Blueprint with more than 100 cells.
+    // Persisted (added 2026-11-05 -- see decisions.md -- previously NOT saved, which reset this to
+    // -1 on every chunk reload/server restart and forced a wasteful, visually-confusing re-climb
+    // from 0% back up to wherever the box had actually gotten to). A real cell count (renamed from
+    // lastBuiltPercent, 2026-10-22, alongside attemptCompletion's own rework), not a percentage --
+    // see that method's own doc for why a percentage could round two different real cell counts
+    // together on a Blueprint with more than 100 cells.
     private int lastBuiltCells = -1;
+
+    // Real wall-clock time (System.currentTimeMillis(), NOT level.getGameTime()) of the last cell
+    // the drip actually placed -- added 2026-11-05, real report: "I've been offline all night and
+    // when I get back this building still isn't done. It's supposed to be updated with clock time,
+    // not in-game ticks." Root cause: the drip only ever advanced when ConstructionBoxBlock's own
+    // BlockEntityTicker fired, which (like any BlockEntityTicker) only runs while this block's chunk
+    // is actually loaded -- with no player nearby overnight, the chunk unloads and the drip simply
+    // never fires, no matter how much real time passes. {@link #attemptCompletion} now computes how
+    // many cells *should* have been placed based on real elapsed seconds since this timestamp, so
+    // the very next tick after the chunk reloads (whenever that happens to be) catches the drip up
+    // to where real time says it should be, instead of resuming at a flat 1 cell/tick-call pace.
+    // 0 means "not yet started this build phase" -- see {@link #attemptCompletion}'s own lazy-init
+    // check for why that first call is never allowed to credit elapsed time retroactively.
+    private long lastDripRealMillis;
 
     // Transaction ledger (added 2026-10-12, explicit user request) -- a standing, human-readable
     // record of every purchase/sale touching the owning plot's Shop, appended via a thin
@@ -329,6 +343,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         }
         removalSnapshot = new TerrainSnapshot();
         lastBuiltCells = -1;
+        lastDripRealMillis = 0;
         setChanged();
         return this;
     }
@@ -393,6 +408,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         this.tier = source.tier;
         this.allowedTier = source.allowedTier;
         this.lastBuiltCells = source.lastBuiltCells;
+        this.lastDripRealMillis = source.lastDripRealMillis;
         this.ledger.clear();
         this.ledger.addAll(source.ledger);
         setChanged();
@@ -670,15 +686,18 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
     // the separate, generic "paces the visual build at a cheap steady drip" mechanic every box
     // (player- or NPC-owned alike) always had -- explicit correction: "It was not supposed to remove
     // the slowly building mechanic... the existing auto-build mechanic was a very slim tick, so
-    // wasn't a problem to keep around." This constant restores that drip, capping every single call
-    // (whether triggered by a funding event or the restored once-a-second ticker in {@code
-    // ConstructionBoxBlock#getTicker}) to advance at most this many cells, rather than jumping
-    // straight to however much the current supply can afford. The ticker is what keeps a
-    // fully-funded box actually finishing (same reasoning the old {@code tickConstruction} doc gave:
-    // without it, a box with no further deposits coming would stall one cell short forever) -- it
-    // costs nothing once a box is complete, since {@link #isFundable()} already short-circuits this
-    // method to a cheap no-op by then, satisfying "stop once the structure completes" without any
-    // separate flag.
+    // wasn't a problem to keep around." This constant is the *floor* on every single call (whether
+    // triggered by a funding event or the restored once-a-second ticker in {@code
+    // ConstructionBoxBlock#getTicker}) -- see {@link #lastDripRealMillis}'s own doc for why it's now
+    // a floor, not the only pace: a real elapsed-wall-clock-time catch-up (added 2026-11-05) can
+    // advance further than this in one call when the drip genuinely wasn't ticking for a while (the
+    // box's chunk unloaded), but a normal back-to-back call (chunk stayed loaded, well under a real
+    // second apart) still advances by exactly this many cells, same steady drip as before. The
+    // ticker is what keeps a fully-funded box actually finishing (same reasoning the old {@code
+    // tickConstruction} doc gave: without it, a box with no further deposits coming would stall one
+    // cell short forever) -- it costs nothing once a box is complete, since {@link #isFundable()}
+    // already short-circuits this method to a cheap no-op by then, satisfying "stop once the
+    // structure completes" without any separate flag.
     private static final int CELLS_PER_STEP = 1;
 
     public boolean attemptCompletion(ServerLevel level) {
@@ -690,7 +709,17 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         if (affordable <= 0 || affordable <= lastBuiltCells) {
             return false;
         }
-        int doneCells = Math.min(affordable, lastBuiltCells + CELLS_PER_STEP);
+        long now = System.currentTimeMillis();
+        if (lastDripRealMillis <= 0) {
+            // First drip of this build phase -- never credit elapsed time from before tracking
+            // started (e.g. a freshly-bound box, or right after clearPartialConstruction's own
+            // reset), or a brand new box would instantly jump ahead based on how long the *server*
+            // has been up rather than how long *this build* has actually been progressing.
+            lastDripRealMillis = now;
+        }
+        long elapsedSeconds = (now - lastDripRealMillis) / 1000L;
+        int step = (int) Math.max(CELLS_PER_STEP, Math.min(Integer.MAX_VALUE, elapsedSeconds));
+        int doneCells = Math.min(affordable, lastBuiltCells + step);
 
         // Guard against pasting over a Building Supply Box (this one or another) sitting somewhere
         // inside the incoming footprint -- real bug, 2026-09-30: moving the box into the build area
@@ -711,6 +740,7 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         }
         removalSnapshot = result.snapshot();
         lastBuiltCells = doneCells;
+        lastDripRealMillis = now;
         boolean complete = status.totalCellCount() > 0 && doneCells >= status.totalCellCount();
         if (complete) {
             blueprintPlaced = true;
@@ -823,6 +853,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         tier = input.getIntOr("Tier", 0);
         allowedTier = input.getIntOr("AllowedTier", 1);
         repositionPending = input.getBooleanOr("RepositionPending", false);
+        lastBuiltCells = input.getIntOr("LastBuiltCells", -1);
+        lastDripRealMillis = input.getLongOr("LastDripRealMillis", 0L);
         Optional<Map<Identifier, Integer>> requiredRead = input.read("Required", ITEM_AMOUNTS_CODEC);
         Optional<Map<Identifier, Integer>> suppliedRead = input.read("Supplied", ITEM_AMOUNTS_CODEC);
         required = fromIdMap(requiredRead.orElse(Map.of()));
@@ -865,6 +897,8 @@ public class ConstructionBoxBlockEntity extends BlockEntity implements MenuProvi
         output.putBoolean("RepositionPending", repositionPending);
         output.putInt("Tier", tier);
         output.putInt("AllowedTier", allowedTier);
+        output.putInt("LastBuiltCells", lastBuiltCells);
+        output.putLong("LastDripRealMillis", lastDripRealMillis);
         output.store("Required", ITEM_AMOUNTS_CODEC, toIdMap(required));
         output.store("Supplied", ITEM_AMOUNTS_CODEC, toIdMap(supplied));
         output.store("Ledger", LedgerEntry.CODEC.listOf(), ledger);
